@@ -1,5 +1,4 @@
 import { Link, router } from "expo-router";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { useState } from "react";
 import {
   Alert,
@@ -14,7 +13,7 @@ import {
 } from "react-native";
 import { theme } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { auth } from "../../lib/firebase";
+import { supabase } from "../../lib/supabase";
 
 const capy = require("../../assets/capy-chill.png");
 
@@ -31,7 +30,11 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
       router.replace("/(tabs)");
     } catch (e: any) {
       Alert.alert("Login failed", e.message ?? "Try again.");

@@ -34,7 +34,7 @@ export default function Onboarding() {
     if (user) {
       setSaving(true);
       try {
-        await saveUserProfile(user.uid, { income: incomeNum, savingsGoal: goalNum });
+        await saveUserProfile(user.id, { income: incomeNum, savingsGoal: goalNum });
       } catch (e: any) {
         Alert.alert("Couldn't save", e.message ?? "Try again.");
         setSaving(false);

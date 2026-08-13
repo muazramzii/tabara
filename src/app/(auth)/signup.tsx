@@ -1,5 +1,4 @@
 import { Link, router } from "expo-router";
-import { createUserWithEmailAndPassword } from "firebase/auth";
 import { useState } from "react";
 import {
   Alert,
@@ -13,7 +12,7 @@ import {
   TextInput,
 } from "react-native";
 import { theme } from "../../constants/theme";
-import { auth } from "../../lib/firebase";
+import { supabase } from "../../lib/supabase";
 
 const capy = require("../../assets/capy-chill.png");
 
@@ -29,7 +28,23 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
+
+      // With email confirmation enabled there's no session yet, so we can't
+      // write a profile — send them to log in after confirming.
+      if (!data.session) {
+        Alert.alert(
+          "Almost there",
+          "Check your email for a confirmation link, then log in."
+        );
+        router.replace("/(auth)/login");
+        return;
+      }
+
       router.replace("/onboarding");
     } catch (e: any) {
       Alert.alert("Sign up failed", e.message ?? "Try again.");

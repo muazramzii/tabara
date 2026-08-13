@@ -1,3 +1,4 @@
+import type { User } from "@supabase/supabase-js";
 import {
   createContext,
   useContext,
@@ -5,8 +6,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { auth } from "./firebase";
+import { supabase } from "./supabase";
 
 type AuthState = {
   user: User | null;
@@ -25,13 +25,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [guest, setGuest] = useState(false);
 
   useEffect(() => {
-    // Fires once on launch (restoring a persisted session) and on every
-    // login / logout afterwards.
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    // Restore a persisted session on launch...
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
       setInitializing(false);
     });
-    return unsub;
+
+    // ...then track every login / logout / token refresh afterwards.
+    // Keep this callback synchronous — awaiting Supabase calls inside it
+    // can deadlock the auth client.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setInitializing(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const enterGuest = () => setGuest(true);
@@ -39,9 +49,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const logout = async () => {
     setGuest(false);
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch {
-      // no real user (e.g. guest mode) — nothing to sign out
+      // no real session (e.g. guest mode) — nothing to sign out
     }
   };
 

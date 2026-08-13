@@ -54,7 +54,7 @@ function computeMood(spent: number, budget: number): Mood {
 
 export function FinanceProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
-  const uid = user?.uid;
+  const uid = user?.id;
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -62,7 +62,11 @@ export function FinanceProvider({ children }: PropsWithChildren) {
 
   const refreshProfile = async () => {
     if (!uid) return;
-    setProfile(await getUserProfile(uid));
+    try {
+      setProfile(await getUserProfile(uid));
+    } catch {
+      setProfile(null); // offline or not set up yet — Home falls back to "set your income"
+    }
   };
 
   useEffect(() => {

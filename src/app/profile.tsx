@@ -32,14 +32,14 @@ export default function Profile() {
 
   useEffect(() => {
     if (!user) return;
-    getUserProfile(user.uid).then((p) => {
+    getUserProfile(user.id).then((p) => {
       setProfile(p);
       if (p) {
         setIncome(String(p.income ?? ""));
         setGoal(String(p.savingsGoal ?? ""));
       }
     });
-    const unsub = listenTransactions(user.uid, setTransactions);
+    const unsub = listenTransactions(user.id, setTransactions);
     return unsub;
   }, [user]);
 
@@ -66,7 +66,7 @@ export default function Profile() {
     }
     setSaving(true);
     try {
-      await saveUserProfile(user.uid, { income: i, savingsGoal: g });
+      await saveUserProfile(user.id, { income: i, savingsGoal: g });
       setProfile((p) => ({ ...(p ?? {}), income: i, savingsGoal: g } as UserProfile));
       Alert.alert("Saved 🦫", "Your money setup is updated.");
     } catch (e: any) {

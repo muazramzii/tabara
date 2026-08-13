@@ -32,7 +32,7 @@ export default function Budgets() {
   // Load profile + transactions directly (this screen is outside the tabs provider)
   useEffect(() => {
     if (!user) return;
-    getUserProfile(user.uid).then((p) => {
+    getUserProfile(user.id).then((p) => {
       setProfile(p);
       const o: Record<string, string> = {};
       const b = p?.budgets ?? {};
@@ -41,7 +41,7 @@ export default function Budgets() {
       });
       setLocal(o);
     });
-    const unsub = listenTransactions(user.uid, setTransactions);
+    const unsub = listenTransactions(user.id, setTransactions);
     return unsub;
   }, [user]);
 
@@ -64,7 +64,7 @@ export default function Budgets() {
     });
     setSaving(true);
     try {
-      await saveBudgets(user.uid, obj);
+      await saveBudgets(user.id, obj);
       router.back();
     } catch (e: any) {
       Alert.alert("Couldn't save", e.message ?? "Try again.");

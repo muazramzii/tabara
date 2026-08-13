@@ -39,7 +39,7 @@ export default function Add() {
     }
     setSaving(true);
     try {
-      await addTransaction(user.uid, { amount: amt, type, category, note: note.trim() });
+      await addTransaction(user.id, { amount: amt, type, category, note: note.trim() });
       setAmount("");
       setNote("");
       router.navigate("/(tabs)");

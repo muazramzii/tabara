@@ -27,7 +27,7 @@ export default function History() {
           onPress: async () => {
             if (!user) return;
             try {
-              await deleteTransaction(user.uid, t.id);
+              await deleteTransaction(user.id, t.id);
             } catch {
               Alert.alert("Couldn't delete", "Try again.");
             }
