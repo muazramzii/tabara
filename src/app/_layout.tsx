@@ -1,9 +1,20 @@
+import {
+  Nunito_400Regular,
+  Nunito_500Medium,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+  useFonts,
+} from "@expo-google-fonts/nunito";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
-import { AuthProvider, useAuth } from "../lib/auth-context";
+import { ActivityIndicator, View } from "react-native";
 import { theme } from "../constants/theme";
+import { AuthProvider, useAuth } from "../lib/auth-context";
+import { setupFonts } from "../lib/setup-fonts";
+
+setupFonts();
 
 function RootNavigator() {
   const { user, guest, initializing } = useAuth();
@@ -15,12 +26,9 @@ function RootNavigator() {
     const inAuthGroup = segments[0] === "(auth)";
     const inProtected = segments[0] === "(tabs)" || segments[0] === "onboarding";
     const signedIn = !!user || guest;
-
     if (!signedIn && inProtected) {
-      // Block protected screens when not signed in
       router.replace("/(auth)/login");
     } else if (guest && inAuthGroup) {
-      // Dev guest tapped "Skip" — drop into the app
       router.replace("/(tabs)");
     }
   }, [user, guest, initializing, segments]);
@@ -32,11 +40,26 @@ function RootNavigator() {
       </View>
     );
   }
-
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Nunito_400Regular,
+    Nunito_500Medium,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator color={theme.primary} size="large" />
+      </View>
+    );
+  }
+
   return (
     <AuthProvider>
       <StatusBar style="dark" />
