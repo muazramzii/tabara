@@ -14,24 +14,11 @@ import {
     type UserProfile,
 } from "./db";
 
-type Mood = { emoji: string; title: string; subtitle: string };
-
-type Derived = {
-  /** Real spending this month — excludes money moved into savings. */
-  spent: number;
-  /** Money deliberately put into the savings category this month. */
-  saved: number;
-  /** Income transactions logged this month (on top of the profile figure). */
-  earned: number;
-  /** profile.income + earned — everything that came in. */
-  income: number;
-  /** income − spent − saved. What's still loose. */
-  balance: number;
-  budget: number;
-  remaining: number;
-  savingsGoal: number;
-  mood: Mood;
-};
+// The month's maths lives in derive.ts so it can be tested without mounting
+// a provider. Re-exported here because screens already import these names
+// from this module.
+import { deriveTotals, type Derived, type Mood } from "./derive";
+export type { Derived, Mood };
 
 type FinanceState = {
   transactions: Transaction[];
@@ -46,22 +33,6 @@ type FinanceState = {
 
 const FinanceContext = createContext<FinanceState>({} as FinanceState);
 export const useFinance = () => useContext(FinanceContext);
-
-const isThisMonth = (d: Date) => {
-  const now = new Date();
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-};
-
-function computeMood(spent: number, budget: number): Mood {
-  if (budget <= 0)
-    return { emoji: "🦫", title: "Kapy is waiting", subtitle: "Set your income to start tracking" };
-  const ratio = spent / budget;
-  if (ratio <= 0.7)
-    return { emoji: "🦫", title: "Kapy is feeling chill", subtitle: "You're well within budget" };
-  if (ratio <= 1)
-    return { emoji: "🦫", title: "Kapy is a bit careful", subtitle: "Getting close to your budget" };
-  return { emoji: "🦫", title: "Kapy is stressed", subtitle: "You've gone over budget this month" };
-}
 
 export function FinanceProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
@@ -112,46 +83,10 @@ export function FinanceProvider({ children }: PropsWithChildren) {
     return unsub;
   }, [uid, attempt]);
 
-  const derived = useMemo<Derived>(() => {
-    const baseIncome = profile?.income ?? 0;
-    const savingsGoal = profile?.savingsGoal ?? 0;
-
-    const thisMonth = transactions.filter((t) => isThisMonth(t.date));
-
-    // Income transactions were previously ignored entirely, so logging a
-    // salary changed nothing on screen. They now add to what came in.
-    const earned = thisMonth
-      .filter((t) => t.type === "income")
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // Moving money into savings is stored as an expense in the "savings"
-    // category. It leaves your spendable pool, but it is not *spending* — so
-    // it's tracked separately and no longer counts against the budget or
-    // makes Kapy stressed.
-    const saved = thisMonth
-      .filter((t) => t.type === "expense" && t.category === "savings")
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const spent = thisMonth
-      .filter((t) => t.type === "expense" && t.category !== "savings")
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const income = baseIncome + earned;
-    const balance = income - spent - saved;
-    const budget = Math.max(income - savingsGoal, 0);
-
-    return {
-      spent,
-      saved,
-      earned,
-      income,
-      balance,
-      budget,
-      remaining: budget - spent,
-      savingsGoal,
-      mood: computeMood(spent, budget),
-    };
-  }, [transactions, profile]);
+  const derived = useMemo<Derived>(
+    () => deriveTotals(transactions, profile),
+    [transactions, profile]
+  );
 
   return (
     <FinanceContext.Provider
