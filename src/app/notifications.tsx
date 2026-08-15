@@ -36,7 +36,7 @@ export default function Notifications() {
   const { user } = useAuth();
   const { transactions, profile } = useFinance();
 
-  // Guest mode has no data to derive anything from.
+  // Nothing to derive alerts from until the session has loaded.
   const alerts = user ? buildAlerts(transactions, profile) : [];
 
   return (

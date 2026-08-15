@@ -36,7 +36,7 @@ const capy = require("../assets/capy-chill.png");
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
-  const { user, guest, logout } = useAuth();
+  const { user, logout } = useAuth();
 
   // Shares the app-wide subscription instead of opening its own. Before the
   // provider moved to the root this screen had to load everything itself.
@@ -72,14 +72,14 @@ export default function Profile() {
   const name =
     profile?.username?.trim() ||
     (user?.user_metadata?.username as string | undefined)?.trim() ||
-    (user?.email ? user.email.split("@")[0] : "Guest");
+    (user?.email ? user.email.split("@")[0] : "there");
   // The handle stays tied to the email — it identifies the account, so it
   // shouldn't change just because the display name did.
-  const handle = user?.email ? "@" + user.email.split("@")[0] : "@guest";
+  const handle = user?.email ? "@" + user.email.split("@")[0] : "";
 
   const saveName = async () => {
     if (!user) {
-      Alert.alert("Guest mode", "Sign up to set your name.");
+      Alert.alert("Not signed in", "Log in again to change your name.");
       return;
     }
     const error = validateUsername(nameDraft);
@@ -114,7 +114,7 @@ export default function Profile() {
   // ── unchanged: save ──────────────────────────────────────
   const save = async () => {
     if (!user) {
-      Alert.alert("Guest mode", "Sign up to save your setup.");
+      Alert.alert("Not signed in", "Log in again to save your setup.");
       return;
     }
     const i = parseFloat(income) || 0;
@@ -293,7 +293,7 @@ export default function Profile() {
           <SectionHeader title="Account" inCard />
           <View style={styles.accRow}>
             <Text style={styles.accLabel}>Email</Text>
-            <Text style={styles.accValue}>{user?.email ?? "Guest (not signed in)"}</Text>
+            <Text style={styles.accValue}>{user?.email ?? "—"}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.accRow}>
@@ -309,12 +309,10 @@ export default function Profile() {
 
         <Pressable style={styles.logout} onPress={confirmLogout}>
           <Ionicons name="log-out-outline" size={20} color={theme.danger} />
-          <Text style={styles.logoutText}>{guest ? "Exit guest mode" : "Log out"}</Text>
+          <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
 
-        {/* Only for real accounts — there is nothing on the server to delete
-            in guest mode, and offering it would imply there is. */}
-        {!guest && user && (
+        {user && (
           <Pressable
             style={styles.deleteLink}
             onPress={() => {

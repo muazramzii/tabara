@@ -15,13 +15,11 @@ import {
 } from "react-native";
 import { SocialAuth } from "../../components/ui/social-buttons";
 import { theme } from "../../constants/theme";
-import { useAuth } from "../../lib/auth-context";
 import { supabase } from "../../lib/supabase";
 
 const capy = require("../../assets/capy-chill.png");
 
 export default function Login() {
-  const { enterGuest } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -119,10 +117,6 @@ export default function Login() {
         <Link href="/(auth)/signup" style={styles.link}>
           No account yet? <Text style={styles.linkBold}>Sign up</Text>
         </Link>
-
-        <Pressable onPress={enterGuest} style={styles.devSkip} hitSlop={8}>
-          <Text style={styles.devSkipText}>Skip to app (dev) →</Text>
-        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -201,12 +195,4 @@ const styles = StyleSheet.create({
     fontSize: theme.size.body,
   },
   linkBold: { color: theme.accent, fontWeight: "800" },
-  // Deliberately quiet: this is a development escape hatch, not a third way
-  // to sign in, and it shouldn't compete with the real actions above it.
-  devSkip: { marginTop: theme.space.xl, alignItems: "center" },
-  devSkipText: {
-    color: theme.muted,
-    fontSize: theme.size.caption,
-    opacity: 0.7,
-  },
 });

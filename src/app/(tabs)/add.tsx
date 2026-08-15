@@ -55,7 +55,7 @@ export default function Add() {
       return;
     }
     if (!user) {
-      Alert.alert("Guest mode", "Sign up with a real account to save transactions.");
+      Alert.alert("Not signed in", "Log in again to save transactions.");
       return;
     }
     setSaving(true);

@@ -24,25 +24,22 @@ import { setupFonts } from "../lib/setup-fonts";
 setupFonts();
 
 function RootNavigator() {
-  const { user, guest, initializing } = useAuth();
+  const { user, initializing } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (initializing) return;
     const inAuthGroup = segments[0] === "(auth)";
-    const signedIn = !!user || guest;
     // Everything outside the auth group is protected. This used to name the
     // protected routes explicitly, which quietly missed the screens that live
     // at the root rather than inside (tabs) — profile, budgets, notifications.
     // Logging out from any of those left you sitting on the same screen.
     // Stated this way, a new screen is protected by default.
-    if (!signedIn && !inAuthGroup) {
+    if (!user && !inAuthGroup) {
       router.replace("/(auth)/welcome");
-    } else if (guest && inAuthGroup) {
-      router.replace("/(tabs)");
     }
-  }, [user, guest, initializing, segments]);
+  }, [user, initializing, segments]);
 
   if (initializing) {
     return (

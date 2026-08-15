@@ -52,7 +52,7 @@ export default function Budgets() {
   // ── unchanged: save ──────────────────────────────────────
   const save = async () => {
     if (!user) {
-      Alert.alert("Guest mode", "Sign up to save budgets.");
+      Alert.alert("Not signed in", "Log in again to save budgets.");
       return;
     }
     const obj: Record<string, number> = {};

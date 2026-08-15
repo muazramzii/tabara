@@ -11,8 +11,6 @@ import { supabase } from "./supabase";
 type AuthState = {
   user: User | null;
   initializing: boolean;
-  guest: boolean; // dev-only escape hatch
-  enterGuest: () => void;
   logout: () => Promise<void>;
 };
 
@@ -22,7 +20,6 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
-  const [guest, setGuest] = useState(false);
 
   useEffect(() => {
     // Restore a persisted session on launch...
@@ -44,19 +41,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const enterGuest = () => setGuest(true);
-
   const logout = async () => {
-    setGuest(false);
     try {
       await supabase.auth.signOut();
     } catch {
-      // no real session (e.g. guest mode) — nothing to sign out
+      // Already signed out, or the token was rejected — either way the local
+      // session is what matters and Supabase clears it regardless.
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, initializing, guest, enterGuest, logout }}>
+    <AuthContext.Provider value={{ user, initializing, logout }}>
       {children}
     </AuthContext.Provider>
   );
