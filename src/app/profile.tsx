@@ -19,7 +19,12 @@ import { Card, ProgressBar, SectionHeader, StatCard } from "../components/ui/car
 import { ScreenHeader } from "../components/ui/controls";
 import { theme } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { saveUsername, saveUserProfile, type UserProfile } from "../lib/db";
+import {
+  deleteAccount,
+  saveUsername,
+  saveUserProfile,
+  type UserProfile,
+} from "../lib/db";
 import { useFinance } from "../lib/finance-context";
 import { fmt, isThisMonth } from "../lib/format";
 import { USERNAME_MAX, validateUsername } from "../lib/password";
@@ -43,6 +48,9 @@ export default function Profile() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deletingBusy, setDeletingBusy] = useState(false);
 
   // Seed the inputs once the profile arrives.
   useEffect(() => {
@@ -125,6 +133,30 @@ export default function Profile() {
       Alert.alert("Couldn't save", e.message ?? "Try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Typing the word is deliberate friction. A tap-to-confirm dialog is far too
+  // easy to clear by reflex, and this is the one action in the app that cannot
+  // be undone — the transactions, the streak and the account all go together.
+  const CONFIRM_WORD = "DELETE";
+
+  const handleDelete = async () => {
+    if (confirmText.trim().toUpperCase() !== CONFIRM_WORD) return;
+
+    setDeletingBusy(true);
+    try {
+      await deleteAccount();
+      setDeleting(false);
+      // Clear the local session too. The server one is already gone, so
+      // without this the app would sit holding a token for a user that no
+      // longer exists.
+      await logout();
+      router.replace("/(auth)/welcome");
+    } catch (e: any) {
+      Alert.alert("Couldn't delete your account", e.message ?? "Try again.");
+    } finally {
+      setDeletingBusy(false);
     }
   };
 
@@ -279,7 +311,106 @@ export default function Profile() {
           <Ionicons name="log-out-outline" size={20} color={theme.danger} />
           <Text style={styles.logoutText}>{guest ? "Exit guest mode" : "Log out"}</Text>
         </Pressable>
+
+        {/* Only for real accounts — there is nothing on the server to delete
+            in guest mode, and offering it would imply there is. */}
+        {!guest && user && (
+          <Pressable
+            style={styles.deleteLink}
+            onPress={() => {
+              setConfirmText("");
+              setDeleting(true);
+            }}
+            hitSlop={8}
+          >
+            <Text style={styles.deleteLinkText}>Delete my account</Text>
+          </Pressable>
+        )}
       </ScrollView>
+
+      <Modal
+        visible={deleting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleting(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          {/* No tap-to-dismiss backdrop here, unlike the rename sheet. On a
+              destructive screen an accidental tap should not be the thing that
+              decides anything — Cancel is explicit. */}
+          <View style={styles.modalCard}>
+            <Text style={styles.deleteTitle}>Delete your account?</Text>
+
+            <Text style={styles.deleteBody}>
+              This permanently erases your account and everything in it:
+            </Text>
+            <View style={styles.deleteList}>
+              <Text style={styles.deleteItem}>
+                • All {transactions.length} of your transactions
+              </Text>
+              <Text style={styles.deleteItem}>
+                • Your income, savings goal and budgets
+              </Text>
+              <Text style={styles.deleteItem}>
+                • Your streak, level and achievements
+              </Text>
+            </View>
+            <Text style={styles.deleteWarn}>
+              This cannot be undone. Kapy can&apos;t bring it back 🦫
+            </Text>
+
+            <Text style={styles.deleteLabel}>
+              Type {CONFIRM_WORD} to confirm
+            </Text>
+            <View style={styles.modalInputWrap}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder={CONFIRM_WORD}
+                placeholderTextColor={theme.muted}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                value={confirmText}
+                onChangeText={setConfirmText}
+              />
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBtn,
+                  styles.modalCancel,
+                  pressed && { opacity: 0.7 },
+                ]}
+                onPress={() => setDeleting(false)}
+                disabled={deletingBusy}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBtn,
+                  styles.modalDelete,
+                  // Stays visibly inert until the word matches, so the button
+                  // itself shows whether the safeguard has been satisfied.
+                  confirmText.trim().toUpperCase() !== CONFIRM_WORD && {
+                    opacity: 0.4,
+                  },
+                  pressed && { opacity: 0.7 },
+                ]}
+                onPress={handleDelete}
+                disabled={
+                  deletingBusy || confirmText.trim().toUpperCase() !== CONFIRM_WORD
+                }
+              >
+                <Text style={styles.modalDeleteText}>
+                  {deletingBusy ? "Deleting…" : "Delete forever"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={editingName}
@@ -408,6 +539,51 @@ const styles = StyleSheet.create({
   },
   modalSave: { backgroundColor: theme.primaryDark },
   modalSaveText: { color: "#fff", fontWeight: "800", fontSize: theme.size.body },
+
+  deleteLink: { alignItems: "center", marginTop: theme.space.base },
+  // Understated on purpose. It must be findable — Play Store requires it — but
+  // it shouldn't compete with the actions people actually came here for.
+  deleteLinkText: {
+    color: theme.muted,
+    fontSize: theme.size.caption,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+  },
+  deleteTitle: {
+    fontFamily: theme.font.displayBold,
+    fontSize: 20,
+    color: theme.danger,
+    marginBottom: theme.space.sm,
+    lineHeight: 26,
+  },
+  deleteBody: {
+    fontSize: theme.size.body,
+    color: theme.text,
+    lineHeight: 22,
+  },
+  deleteList: { marginTop: theme.space.sm, gap: 3 },
+  deleteItem: {
+    fontSize: theme.size.caption,
+    color: theme.primaryDark,
+    lineHeight: 19,
+  },
+  deleteWarn: {
+    fontSize: theme.size.caption,
+    color: theme.danger,
+    fontWeight: "700",
+    marginTop: theme.space.md,
+    lineHeight: 19,
+  },
+  deleteLabel: {
+    fontSize: theme.size.caption,
+    fontWeight: "800",
+    color: theme.muted,
+    letterSpacing: 0.6,
+    marginTop: theme.space.base,
+    marginBottom: theme.space.sm,
+  },
+  modalDelete: { backgroundColor: theme.danger },
+  modalDeleteText: { color: "#fff", fontWeight: "800", fontSize: theme.size.body },
 
   screen: { flex: 1, backgroundColor: theme.bg },
   content: {

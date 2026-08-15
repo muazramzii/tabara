@@ -82,6 +82,22 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 }
 
 /**
+ * Permanently delete the signed-in user's account and everything in it.
+ *
+ * Handled by an Edge Function because removing an auth user needs the
+ * service_role key, which must never ship inside the app. The function
+ * identifies the account from the caller's token — this passes no user id,
+ * because there is no way for one user to delete another.
+ */
+export async function deleteAccount(): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("delete-account", {
+    body: {},
+  });
+  if (error) throw new Error(error.message ?? "Couldn't delete the account.");
+  if (data?.error) throw new Error(data.error);
+}
+
+/**
  * Update only the display name.
  *
  * Deliberately not routed through saveUserProfile: that one always sends
