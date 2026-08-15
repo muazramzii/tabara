@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Tabara</title>
+<style>
+  :root {
+    --bg: #F4EFE4;
+    --card: #FFFFFF;
+    --text: #3D352B;
+    --muted: #6F5A45;
+    --accent: #A8744E;
+    --border: #E8DFCF;
+    --note-bg: #FBF7EE;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.65;
+    font-size: 17px;
+  }
+  .wrap { max-width: 44rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  header { margin-bottom: 2.5rem; }
+  h1 { font-size: 2.1rem; margin: 0 0 .4rem; letter-spacing: -.5px; }
+  .sub { color: var(--muted); margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 1.6rem;
+    margin-bottom: 1.1rem;
+  }
+  h2 {
+    font-size: 1.15rem;
+    margin: 0 0 .7rem;
+    color: var(--accent);
+    letter-spacing: .2px;
+  }
+  h3 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+  p, li { color: var(--text); }
+  ul { padding-left: 1.2rem; margin: .5rem 0; }
+  li { margin-bottom: .35rem; }
+  a { color: var(--accent); }
+  .note {
+    background: var(--note-bg);
+    border-left: 3px solid var(--accent);
+    padding: .85rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0 0;
+  }
+  .note p { margin: 0; color: var(--muted); font-size: .95rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: .6rem; font-size: .95rem; }
+  th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 700; }
+  footer { margin-top: 2rem; color: var(--muted); font-size: .9rem; text-align: center; }
+  code { background: var(--note-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Privacy Policy</h1>
+  <p class="sub">Tabara &mdash; personal finance tracker &middot; Last updated 16 August 2026</p>
+</header>
+
+<div class="card">
+  <h2>Who this is about</h2>
+  <p>
+    Tabara is a mobile app for tracking personal spending and savings, built and
+    operated by <strong>Muaz Ramzi</strong>. This policy explains what the app
+    collects, why, where it is kept, and how you can get it removed.
+  </p>
+  <p>
+    If you do not agree with this policy, please do not create an account.
+  </p>
+</div>
+
+<div class="card">
+  <h2>What Tabara collects</h2>
+
+  <h3>Account information</h3>
+  <ul>
+    <li><strong>Email address</strong> &mdash; used to identify your account and to send password-reset codes.</li>
+    <li><strong>Password</strong> &mdash; stored only as a salted hash by our authentication provider. Nobody, including us, can read your password.</li>
+    <li><strong>Display name</strong> &mdash; the name the app greets you by. You choose it and can change it at any time.</li>
+  </ul>
+  <p>
+    If you sign in with Google or Facebook instead, we receive your name, email
+    address and account identifier from that provider. We do not receive your
+    password, your friends or contacts, your posts, or anything else from
+    those accounts.
+  </p>
+
+  <h3>Financial information you enter</h3>
+  <ul>
+    <li>Transactions: amount, whether it is income or an expense, category, date, and any note you add.</li>
+    <li>Your monthly income figure, savings goal, and per-category budget limits.</li>
+  </ul>
+  <p>
+    These are figures you type in yourself. Tabara has no connection to any
+    bank, e-wallet or payment provider.
+  </p>
+
+  <h3>Stored on your device only</h3>
+  <ul>
+    <li>Your login session, so you stay signed in.</li>
+    <li>A marker recording the highest logging streak you have celebrated, so the animation does not repeat.</li>
+  </ul>
+  <p>This information never leaves your phone and is erased when you uninstall the app.</p>
+</div>
+
+<div class="card">
+  <h2>What Tabara does <em>not</em> collect</h2>
+  <ul>
+    <li>Bank logins, card numbers, or any payment credentials.</li>
+    <li>Your location.</li>
+    <li>Your contacts, photos library, messages, or call history.</li>
+    <li>Advertising identifiers. Tabara contains no advertising and no third-party analytics or tracking SDKs.</li>
+  </ul>
+  <p>
+    Tabara asks for camera and photo access only at the moment you choose to
+    scan a receipt, and uses it for nothing else.
+  </p>
+</div>
+
+<div class="card">
+  <h2>How the AI features work</h2>
+  <p>
+    Tabara includes a chat assistant (&ldquo;Kapy&rdquo;) and a receipt scanner.
+    Both are powered by Google&rsquo;s Gemini API.
+  </p>
+
+  <h3>Receipt scanning</h3>
+  <p>
+    When you photograph a receipt, the image is sent to Google&rsquo;s Gemini API
+    to read the total, merchant name and date. <strong>The image is not stored
+    by Tabara</strong> &mdash; it is used for that single request and discarded.
+    Only the values you then confirm and save are kept.
+  </p>
+
+  <h3>Chat with Kapy</h3>
+  <p>
+    Your messages, together with a summary of your current budget figures, are
+    sent to Google&rsquo;s Gemini API to generate a reply.
+    <strong>Conversations are not stored on our servers</strong> &mdash; they exist
+    only in the app while the screen is open and are gone when you leave it.
+  </p>
+
+  <p>
+    Your name, email address and account identifier are never sent to Google as
+    part of these requests. Data sent to the Gemini API is handled under
+    <a href="https://ai.google.dev/gemini-api/terms" rel="noopener">Google&rsquo;s Gemini API terms</a>.
+  </p>
+
+  <div class="note">
+    <p>
+      The AI is used to read receipts and answer questions. It is never used to
+      decide what you are allowed to see. Every request is checked against your
+      own account first, so the assistant can only ever work with your data.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Where your data is kept</h2>
+  <p>
+    Tabara uses <a href="https://supabase.com/privacy" rel="noopener">Supabase</a>
+    for its database and authentication. Your data is stored on servers located
+    in <strong>Tokyo, Japan</strong> (AWS <code>ap-northeast-1</code>).
+  </p>
+  <p>
+    If you are in Malaysia, this means your personal data is transferred outside
+    Malaysia. By using Tabara you consent to that transfer, as required under the
+    Personal Data Protection Act 2010.
+  </p>
+  <p>
+    All traffic between the app and our servers is encrypted in transit (HTTPS).
+    Every database table enforces row-level security tied to your account
+    identifier, so one user cannot read another user&rsquo;s records.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Who your data is shared with</h2>
+  <p><strong>We do not sell your data, and we do not share it for advertising.</strong></p>
+  <table>
+    <tr><th>Service</th><th>What it receives</th><th>Why</th></tr>
+    <tr>
+      <td>Supabase</td>
+      <td>Account details and everything you save in the app</td>
+      <td>Database and login hosting</td>
+    </tr>
+    <tr>
+      <td>Google (Gemini API)</td>
+      <td>Receipt images, chat messages, budget totals</td>
+      <td>Reading receipts and answering questions</td>
+    </tr>
+    <tr>
+      <td>Google / Facebook</td>
+      <td>Only if you choose to sign in with them</td>
+      <td>Verifying who you are at login</td>
+    </tr>
+  </table>
+  <p style="margin-top:1rem">
+    We may also disclose data where required by law, or to investigate abuse of
+    the service.
+  </p>
+</div>
+
+<div class="card">
+  <h2>How long it is kept, and how to delete it</h2>
+  <p>
+    Your data is kept for as long as your account exists. You can delete
+    individual transactions yourself from the History screen at any time, and
+    that removal is immediate and permanent.
+  </p>
+  <p>
+    To delete your entire account and everything in it, email
+    <a href="mailto:muazramzi.123@gmail.com">muazramzi.123@gmail.com</a> from the
+    address you registered with. Your account, profile and all transactions will
+    be permanently erased within 30 days, and we will confirm when it is done.
+    Deletion cannot be undone.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Your rights</h2>
+  <p>Under the Personal Data Protection Act 2010 (Malaysia), you may:</p>
+  <ul>
+    <li>Ask what personal data we hold about you and request a copy.</li>
+    <li>Correct anything that is wrong &mdash; most of it you can edit directly in the app.</li>
+    <li>Withdraw consent and have your data deleted.</li>
+    <li>Limit how your data is processed.</li>
+  </ul>
+  <p>
+    To exercise any of these, email
+    <a href="mailto:muazramzi.123@gmail.com">muazramzi.123@gmail.com</a>.
+    We aim to respond within 30 days.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Children</h2>
+  <p>
+    Tabara is not directed at children under 13, and we do not knowingly collect
+    their personal data. If you believe a child has created an account, contact
+    us and we will remove it.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Changes to this policy</h2>
+  <p>
+    If this policy changes, the date at the top of this page is updated. Material
+    changes will be announced in the app before they take effect. Continuing to
+    use Tabara after a change means you accept the updated policy.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy or your data:<br>
+    <strong>Muaz Ramzi</strong><br>
+    <a href="mailto:muazramzi.123@gmail.com">muazramzi.123@gmail.com</a>
+  </p>
+</div>
+
+<footer>Tabara &middot; Personal finance, with a capybara 🦫</footer>
+
+</div>
+</body>
+</html>
