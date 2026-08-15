@@ -211,15 +211,26 @@ export default function Kapy() {
       // Pass the receipt's own date along in YYYY-MM-DD so Kapy files it on
       // the day it happened. Without this every scan lands as today, which is
       // wrong the moment you photograph a receipt from earlier in the week.
-      const dateHint = r.date
-        ? ` dated ${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, "0")}-${String(
+      // Plain YYYY-MM-DD, which is exactly what add_transaction's date
+      // parameter expects — no prose for the model to reinterpret.
+      const isoDate = r.date
+        ? `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, "0")}-${String(
             r.date.getDate()
           ).padStart(2, "0")}`
         : "";
+      // The merchant name is text read off a photograph, so it is kept inside
+      // a labelled block rather than woven into the sentence asking Kapy to
+      // record something. Interpolated mid-sentence, a crafted receipt reads
+      // as part of the request; fenced off, it reads as a value. The server
+      // strips the delimiters from it, so the block can't be closed early.
       const text = r.amount
-        ? `I just scanned a receipt: RM ${r.amount.toFixed(2)}${
-            r.merchant ? ` at ${r.merchant}` : ""
-          }${dateHint}, looks like ${label}. Can you record it for me?`
+        ? `I just scanned a receipt. Please record it for me.\n` +
+          `<<RECEIPT>>\n` +
+          `amount: RM ${r.amount.toFixed(2)}\n` +
+          `category: ${label}\n` +
+          (isoDate ? `date: ${isoDate}\n` : "") +
+          (r.merchant ? `merchant: ${r.merchant}\n` : "") +
+          `<</RECEIPT>>`
         : "I scanned a receipt but the total wasn't readable. What should I do?";
 
       const next: ChatMessage[] = [...withPhoto, { role: "user", text }];

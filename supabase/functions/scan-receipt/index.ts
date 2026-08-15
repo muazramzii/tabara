@@ -8,6 +8,7 @@
 //   npx supabase functions deploy scan-receipt
 
 import { validateConfidence, validateDateString } from "../_shared/date.ts";
+import { sanitizeText } from "../_shared/sanitize.ts";
 import { logProviderError, logUnexpected } from "../_shared/log.ts";
 
 // Pinned rather than `gemini-flash-latest` — see the note in kapy/index.ts.
@@ -18,6 +19,12 @@ const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.7-flash";
 // quality 0.5, so a genuine receipt lands far under this; the cap is here so
 // one account can't push arbitrarily large payloads through Gemini.
 const MAX_BASE64 = 6_000_000;
+
+// A merchant name is a few words. The cap is a security control, not
+// cosmetics: this string is read off a photograph, so its content is chosen
+// by whoever printed the receipt, and it later reaches a tool-calling model.
+// Anything long enough to argue with a system prompt is not a merchant name.
+const MAX_MERCHANT = 40;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic"];
 
 const corsHeaders = {
@@ -137,7 +144,10 @@ If a value is unreadable, use null for amount/merchant/date and "other" for cate
 
     return json({
       amount,
-      merchant: parsed.merchant ?? null,
+      // Cleaned here, at the point untrusted text enters the system, rather
+      // than at each place it is later used — one of those places would
+      // eventually be forgotten.
+      merchant: sanitizeText(parsed.merchant, MAX_MERCHANT),
       // Validated again on the client against the real category list.
       category: categories.includes(parsed.category) ? parsed.category : "other",
       // Plain YYYY-MM-DD rather than a timestamp: the app builds a local Date
