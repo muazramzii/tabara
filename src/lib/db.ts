@@ -15,6 +15,8 @@ export interface UserProfile {
   income: number;
   savingsGoal: number;
   budgets?: Record<string, number>; // categoryId -> monthly limit
+  /** What the app calls you. Set at signup; a display name, not an identifier. */
+  username?: string;
 }
 
 // Postgres uses snake_case, the app uses camelCase — map at this boundary
@@ -51,6 +53,9 @@ export async function saveUserProfile(uid: string, p: UserProfile) {
     updated_at: new Date().toISOString(),
   };
   if (p.budgets) payload.budgets = p.budgets;
+  // Same reasoning as budgets: only send it when we were actually given one,
+  // so saving income from onboarding can't blank the name set at signup.
+  if (p.username !== undefined) payload.username = p.username;
 
   const { error } = await supabase
     .from("profiles")
@@ -61,7 +66,7 @@ export async function saveUserProfile(uid: string, p: UserProfile) {
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("income, savings_goal, budgets")
+    .select("income, savings_goal, budgets, username")
     .eq("id", uid)
     .maybeSingle(); // no row yet is a normal state, not an error
 
@@ -72,7 +77,27 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     income: Number(data.income) || 0,
     savingsGoal: Number(data.savings_goal) || 0,
     budgets: (data.budgets as Record<string, number>) ?? {},
+    username: (data.username as string) ?? undefined,
   };
+}
+
+/**
+ * Update only the display name.
+ *
+ * Deliberately not routed through saveUserProfile: that one always sends
+ * income and savings_goal, so renaming yourself before the profile had
+ * finished loading would write zeros over both. Sending just this column
+ * makes that impossible rather than merely unlikely. Every other column has
+ * a default, so this still works if the row somehow doesn't exist yet.
+ */
+export async function saveUsername(uid: string, username: string) {
+  const { error } = await supabase
+    .from("profiles")
+    .upsert(
+      { id: uid, username, updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+  if (error) throw error;
 }
 
 export async function saveBudgets(uid: string, budgets: Record<string, number>) {
@@ -88,7 +113,14 @@ export async function saveBudgets(uid: string, budgets: Record<string, number>) 
 // ── Transactions ─────────────────────────────────────────
 export async function addTransaction(
   uid: string,
-  txn: { amount: number; type: TxnType; category: string; note?: string }
+  txn: {
+    amount: number;
+    type: TxnType;
+    category: string;
+    note?: string;
+    /** When it actually happened. Defaults to now, so old callers are unaffected. */
+    date?: Date;
+  }
 ) {
   const { error } = await supabase.from("transactions").insert({
     user_id: uid,
@@ -96,7 +128,7 @@ export async function addTransaction(
     type: txn.type,
     category: txn.category,
     note: txn.note ? txn.note : null, // empty note stays null, not ""
-    date: new Date().toISOString(),
+    date: (txn.date ?? new Date()).toISOString(),
   });
   if (error) throw error;
 }
@@ -123,6 +155,12 @@ export async function fetchTransactions(uid: string): Promise<Transaction[]> {
   return (data ?? []).map((row) => toTransaction(row as TransactionRow));
 }
 
+// Realtime rejects `.on()` on a channel that has already been subscribed, and
+// channels are keyed by topic. Several screens listen at once (the tabs
+// provider, Profile, Budgets), so a topic of just `transactions:<uid>` collides
+// and the second subscriber crashes. Each call gets its own topic instead.
+let channelSeq = 0;
+
 // Live listener — calls cb with the full list now, and again after every
 // change. Returns unsubscribe fn.
 //
@@ -131,7 +169,13 @@ export async function fetchTransactions(uid: string): Promise<Transaction[]> {
 // here are small, so this stays cheap and is always correct.
 export function listenTransactions(
   uid: string,
-  cb: (txns: Transaction[]) => void
+  cb: (txns: Transaction[]) => void,
+  /**
+   * Called when the fetch fails. Without this the caller can't tell "you have
+   * no transactions" apart from "we couldn't reach the server" — which used to
+   * make an offline app claim your records were gone.
+   */
+  onError?: (message: string) => void
 ) {
   let cancelled = false;
 
@@ -139,15 +183,18 @@ export function listenTransactions(
     try {
       const txns = await fetchTransactions(uid);
       if (!cancelled) cb(txns);
-    } catch {
-      if (!cancelled) cb([]); // offline or blocked — show empty rather than hang
+    } catch (e: any) {
+      if (!cancelled) {
+        if (onError) onError(e?.message ?? "Couldn't load your transactions.");
+        else cb([]); // no handler passed — keep the old behaviour
+      }
     }
   };
 
   load();
 
   const channel = supabase
-    .channel(`transactions:${uid}`)
+    .channel(`transactions:${uid}:${++channelSeq}`)
     .on(
       "postgres_changes",
       {

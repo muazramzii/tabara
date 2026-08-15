@@ -1,4 +1,4 @@
-import { CATEGORIES } from "../constants/categories";
+import { ALL_CATEGORIES, CATEGORIES } from "../constants/categories";
 import { supabase } from "./supabase";
 
 // The Gemini API key used to live in .env with an EXPO_PUBLIC_ prefix, which
@@ -30,13 +30,38 @@ export interface ReceiptResult {
   amount: number | null;
   merchant: string | null;
   category: string;
+  /** Date printed on the receipt. Null when unreadable — caller uses today. */
+  date: Date | null;
+  /** 0–1 from the model, or null when it didn't give a usable number. */
+  confidence: number | null;
+}
+
+/**
+ * Builds a local Date from a YYYY-MM-DD string.
+ *
+ * Deliberately not `new Date("2026-08-03")` — that parses as UTC midnight, so
+ * anywhere west of Greenwich the receipt lands on the previous day. Passing
+ * the parts to the constructor keeps it on the date actually printed.
+ */
+function localDateFrom(raw: unknown): Date | null {
+  if (typeof raw !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
 export async function scanReceipt(
   base64: string,
   mimeType = "image/jpeg"
 ): Promise<ReceiptResult> {
-  const result = await callFunction<ReceiptResult>("scan-receipt", {
+  // The wire shape isn't the return shape — date arrives as a string.
+  const result = await callFunction<{
+    amount: unknown;
+    merchant: string | null;
+    category: string;
+    date: unknown;
+    confidence: unknown;
+  }>("scan-receipt", {
     base64,
     mimeType,
     // Sent from here so constants/categories.ts stays the single source of
@@ -45,15 +70,30 @@ export async function scanReceipt(
   });
 
   // Trust but verify: re-check the category against the real list in case the
-  // model returned something unexpected.
+  // model returned something unexpected. A receipt is always an expense, so
+  // only the expense list is valid here.
   const category = CATEGORIES.some((c) => c.id === result.category)
     ? result.category
     : "other";
+
+  // The function already range-checks the date, but parse defensively here
+  // too — this layer must hold up on its own, not because the server happened
+  // to behave.
+  const date = localDateFrom(result.date);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const confidence =
+    typeof result.confidence === "number" && Number.isFinite(result.confidence)
+      ? Math.min(Math.max(result.confidence, 0), 1)
+      : null;
 
   return {
     amount: typeof result.amount === "number" ? result.amount : null,
     merchant: result.merchant ?? null,
     category,
+    date: date && date <= tomorrow ? date : null,
+    confidence,
   };
 }
 
@@ -69,10 +109,11 @@ export async function askKapy(
   const { reply } = await callFunction<{ reply: string }>("kapy", {
     history,
     financialSummary,
-    // Kapy can record transactions, so it needs the valid category ids to
-    // choose from. Sent from here so constants/categories.ts stays the single
+    // Kapy records income as well as expenses ("dapat gaji 2000"), so it needs
+    // both lists — otherwise a salary would have to be filed under a spending
+    // category. Sent from here so constants/categories.ts stays the single
     // source of truth.
-    categories: CATEGORIES.map((c) => c.id),
+    categories: ALL_CATEGORIES.map((c) => c.id),
   });
   return reply?.trim() || "Hmm, I blanked out 🦫 try again?";
 }

@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -24,6 +25,7 @@ export default function Onboarding() {
   const [goal, setGoal] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // ── unchanged: save + validation ─────────────────────────
   const finish = async () => {
     const incomeNum = parseFloat(income) || 0;
     const goalNum = parseFloat(goal) || 0;
@@ -44,36 +46,76 @@ export default function Onboarding() {
     router.replace("/(tabs)");
   };
 
+  // Live preview of what the numbers mean, so the 50/30/20 rule isn't a
+  // surprise on the Home screen afterwards.
+  const inc = parseFloat(income) || 0;
+  const g = parseFloat(goal) || 0;
+  const spendable = Math.max(inc - g, 0);
+
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Image source={capy} style={styles.capy} resizeMode="contain" />
-        <Text style={styles.title}>Let's set you up</Text>
+        <Text style={styles.title}>Let&apos;s set you up</Text>
         <Text style={styles.subtitle}>Just two quick things.</Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Monthly income (RM)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 2500"
-            placeholderTextColor={theme.muted}
-            keyboardType="numeric"
-            value={income}
-            onChangeText={setIncome}
-          />
-          <Text style={[styles.label, { marginTop: 14 }]}>Monthly savings goal (RM)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 500"
-            placeholderTextColor={theme.muted}
-            keyboardType="numeric"
-            value={goal}
-            onChangeText={setGoal}
-          />
-          <Pressable style={[styles.button, saving && { opacity: 0.6 }]} onPress={finish} disabled={saving}>
+          <Text style={styles.label}>MONTHLY INCOME (RM)</Text>
+          <View style={styles.inputWrap}>
+            <Text style={styles.rm}>RM</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="2500"
+              placeholderTextColor={theme.muted}
+              keyboardType="numeric"
+              value={income}
+              onChangeText={setIncome}
+            />
+          </View>
+
+          <Text style={[styles.label, { marginTop: theme.space.lg }]}>
+            MONTHLY SAVINGS GOAL (RM)
+          </Text>
+          <View style={styles.inputWrap}>
+            <Text style={styles.rm}>RM</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="500"
+              placeholderTextColor={theme.muted}
+              keyboardType="numeric"
+              value={goal}
+              onChangeText={setGoal}
+            />
+          </View>
+
+          {inc > 0 && (
+            <View style={styles.preview}>
+              <Ionicons name="wallet-outline" size={17} color={theme.primaryDark} />
+              <Text style={styles.previewText}>
+                That leaves{" "}
+                <Text style={styles.previewStrong}>RM {spendable.toFixed(2)}</Text> to spend
+                each month.
+              </Text>
+            </View>
+          )}
+
+          <Pressable
+            style={({ pressed }) => [styles.button, (saving || pressed) && { opacity: 0.7 }]}
+            onPress={finish}
+            disabled={saving}
+          >
             <Text style={styles.buttonText}>{saving ? "Saving..." : "Finish setup"}</Text>
           </Pressable>
         </View>
+
+        <Text style={styles.footnote}>You can change these any time in Profile.</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -81,13 +123,81 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
-  content: { flexGrow: 1, justifyContent: "center", padding: 24 },
-  capy: { width: 100, height: 100, alignSelf: "center" },
-  title: { fontSize: 26, fontWeight: "800", color: theme.text, textAlign: "center", marginTop: 6 },
-  subtitle: { fontSize: 15, color: theme.muted, textAlign: "center", marginBottom: 26 },
-  card: { backgroundColor: theme.card, borderRadius: theme.radius.lg, padding: 18, borderWidth: 1, borderColor: theme.border, ...theme.shadow },
-  label: { fontSize: 13, color: theme.muted, fontWeight: "600", marginBottom: 6 },
-  input: { backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.border, borderRadius: theme.radius.md, padding: 14, fontSize: 16, color: theme.text },
-  button: { backgroundColor: theme.primary, borderRadius: theme.radius.md, padding: 16, alignItems: "center", marginTop: 18 },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  content: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: theme.space.xl,
+  },
+  capy: { width: 104, height: 104, alignSelf: "center" },
+  title: {
+    fontSize: theme.size.display,
+    fontWeight: "800",
+    color: theme.text,
+    textAlign: "center",
+    marginTop: theme.space.sm,
+  },
+  subtitle: {
+    fontSize: theme.size.body,
+    color: theme.muted,
+    textAlign: "center",
+    marginBottom: theme.space.xl,
+  },
+  card: {
+    backgroundColor: theme.card,
+    borderRadius: theme.radius.lg,
+    padding: theme.space.lg,
+    borderWidth: 1,
+    borderColor: theme.border,
+    ...theme.shadow,
+  },
+  label: {
+    fontSize: theme.size.caption,
+    color: theme.muted,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    marginBottom: theme.space.sm,
+  },
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space.sm,
+    backgroundColor: theme.bg,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space.base,
+  },
+  rm: { fontSize: theme.size.body, fontWeight: "700", color: theme.muted },
+  input: {
+    flex: 1,
+    paddingVertical: theme.space.base,
+    fontSize: theme.size.section + 3,
+    fontWeight: "800",
+    color: theme.text,
+  },
+  preview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space.sm,
+    backgroundColor: theme.accentSoft,
+    borderRadius: theme.radius.sm,
+    padding: theme.space.md,
+    marginTop: theme.space.base,
+  },
+  previewText: { flex: 1, fontSize: theme.size.label, color: theme.primaryDark, lineHeight: 18 },
+  previewStrong: { fontWeight: "800" },
+  button: {
+    backgroundColor: theme.primaryDark,
+    borderRadius: theme.radius.md,
+    padding: theme.space.base + 2,
+    alignItems: "center",
+    marginTop: theme.space.lg,
+  },
+  buttonText: { color: "#fff", fontSize: theme.size.body, fontWeight: "800" },
+  footnote: {
+    fontSize: theme.size.caption,
+    color: theme.muted,
+    textAlign: "center",
+    marginTop: theme.space.base,
+  },
 });

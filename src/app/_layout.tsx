@@ -1,4 +1,9 @@
 import {
+  Fredoka_500Medium,
+  Fredoka_600SemiBold,
+  Fredoka_700Bold,
+} from "@expo-google-fonts/fredoka";
+import {
   Nunito_400Regular,
   Nunito_500Medium,
   Nunito_600SemiBold,
@@ -12,6 +17,8 @@ import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { theme } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { StreakCelebration } from "../components/ui/streak-celebration";
+import { FinanceProvider } from "../lib/finance-context";
 import { setupFonts } from "../lib/setup-fonts";
 
 setupFonts();
@@ -24,10 +31,14 @@ function RootNavigator() {
   useEffect(() => {
     if (initializing) return;
     const inAuthGroup = segments[0] === "(auth)";
-    const inProtected = segments[0] === "(tabs)" || segments[0] === "onboarding";
     const signedIn = !!user || guest;
-    if (!signedIn && inProtected) {
-      router.replace("/(auth)/login");
+    // Everything outside the auth group is protected. This used to name the
+    // protected routes explicitly, which quietly missed the screens that live
+    // at the root rather than inside (tabs) — profile, budgets, notifications.
+    // Logging out from any of those left you sitting on the same screen.
+    // Stated this way, a new screen is protected by default.
+    if (!signedIn && !inAuthGroup) {
+      router.replace("/(auth)/welcome");
     } else if (guest && inAuthGroup) {
       router.replace("/(tabs)");
     }
@@ -50,6 +61,11 @@ export default function RootLayout() {
     Nunito_600SemiBold,
     Nunito_700Bold,
     Nunito_800ExtraBold,
+    // Display face, used only where a typeface should have personality —
+    // the wordmark. Nunito stays the workhorse for everything else.
+    Fredoka_500Medium,
+    Fredoka_600SemiBold,
+    Fredoka_700Bold,
   });
 
   if (!fontsLoaded) {
@@ -61,9 +77,18 @@ export default function RootLayout() {
   }
 
   return (
+    // FinanceProvider sits here rather than inside (tabs) so routes outside
+    // the tab group — profile, budgets, notifications — can use useFinance()
+    // too. It must stay inside AuthProvider, which it depends on for the uid,
+    // and it loads nothing until someone is signed in.
     <AuthProvider>
-      <StatusBar style="dark" />
-      <RootNavigator />
+      <FinanceProvider>
+        <StatusBar style="dark" />
+        <RootNavigator />
+        {/* Renders above every route, so the burst lands whether the streak
+            ticked up from the Add screen or from Kapy recording something. */}
+        <StreakCelebration />
+      </FinanceProvider>
     </AuthProvider>
   );
 }

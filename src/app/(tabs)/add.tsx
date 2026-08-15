@@ -5,6 +5,8 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,21 +14,40 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { CATEGORIES } from "../../constants/categories";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CategoryField } from "../../components/ui/category-field";
+import { Segmented } from "../../components/ui/controls";
+import { DateField } from "../../components/ui/date-field";
+import { categoriesFor } from "../../constants/categories";
 import { theme } from "../../constants/theme";
 import { scanReceipt } from "../../lib/ai";
 import { useAuth } from "../../lib/auth-context";
 import { addTransaction, type TxnType } from "../../lib/db";
+import { cat } from "../../lib/format";
 
 export default function Add() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [type, setType] = useState<TxnType>("expense");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<string>("food");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
 
+  // Expenses and income need different category lists — filing a salary under
+  // "Food & Drink" skewed the donut and the needs/wants split.
+  const categories = categoriesFor(type);
+
+  const changeType = (next: TxnType) => {
+    setType(next);
+    // The current pick won't exist in the other list, so land on its first entry.
+    const list = categoriesFor(next);
+    if (!list.some((c) => c.id === category)) setCategory(list[0].id);
+  };
+
+  // ── unchanged: save ──────────────────────────────────────
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) {
@@ -39,7 +60,13 @@ export default function Add() {
     }
     setSaving(true);
     try {
-      await addTransaction(user.id, { amount: amt, type, category, note: note.trim() });
+      await addTransaction(user.id, {
+        amount: amt,
+        type,
+        category,
+        note: note.trim(),
+        date,
+      });
       setAmount("");
       setNote("");
       router.navigate("/(tabs)");
@@ -50,6 +77,7 @@ export default function Add() {
     }
   };
 
+  // ── unchanged: receipt scanning ──────────────────────────
   const pickAndScan = async (source: "camera" | "library") => {
     const perm =
       source === "camera"
@@ -59,8 +87,12 @@ export default function Add() {
       Alert.alert("Permission needed", "Allow access to use this.");
       return;
     }
-const opts = { base64: true, quality: 0.5, mediaTypes: ["images"] as ImagePicker.MediaType[] };
-    
+    const opts = {
+      base64: true,
+      quality: 0.5,
+      mediaTypes: ["images"] as ImagePicker.MediaType[],
+    };
+
     const result =
       source === "camera"
         ? await ImagePicker.launchCameraAsync(opts)
@@ -76,11 +108,32 @@ const opts = { base64: true, quality: 0.5, mediaTypes: ["images"] as ImagePicker
     setScanning(true);
     try {
       const r = await scanReceipt(asset.base64, asset.mimeType ?? "image/jpeg");
-      setType("expense");
+      changeType("expense");
       if (r.amount) setAmount(String(r.amount));
       if (r.category) setCategory(r.category);
       if (r.merchant) setNote(r.merchant);
-      Alert.alert("Scanned! 🦫", "Check the details below, then tap Save.");
+      // Only override the date when the receipt actually had a legible one.
+      // Otherwise today stands, which is what the field already shows.
+      if (r.date) setDate(r.date);
+
+      // Say what was and wasn't read, rather than a blanket "Scanned!" — the
+      // user can only check what they know to look at.
+      const notes: string[] = [];
+      if (!r.amount) notes.push("couldn't read the total");
+      if (!r.date) notes.push("couldn't read a date, so it's filed as today");
+      // Below ~0.6 the model is telling us the image was hard to read.
+      const shaky = r.confidence !== null && r.confidence < 0.6;
+
+      if (notes.length > 0 || shaky) {
+        Alert.alert(
+          "Scanned — please double-check 🦫",
+          notes.length > 0
+            ? `Kapy ${notes.join(", and ")}. Check everything below before saving.`
+            : "That photo was hard to read. Check the details below before saving."
+        );
+      } else {
+        Alert.alert("Scanned! 🦫", "Check the details below, then tap Save.");
+      }
     } catch (e: any) {
       Alert.alert("Scan failed", e.message ?? "Try again.");
     } finally {
@@ -96,140 +149,250 @@ const opts = { base64: true, quality: 0.5, mediaTypes: ["images"] as ImagePicker
     ]);
   };
 
+  const selected = cat(category);
+  const isIncome = type === "income";
+  // Money in is green, money out is clay. The amount surface carries that
+  // meaning instead of being decoratively tinted.
+  const accent = isIncome ? theme.income : theme.expense;
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Log spending</Text>
-
-      {/* Receipt scan */}
-      <Pressable style={styles.scan} onPress={onScanPress} disabled={scanning}>
-        {scanning ? (
-          <>
-            <ActivityIndicator color={theme.primary} />
-            <Text style={styles.scanText}>Reading receipt…</Text>
-          </>
-        ) : (
-          <>
-            <Ionicons name="camera-outline" size={20} color={theme.primary} />
-            <Text style={styles.scanText}>Snap a receipt — let Kapy fill it in</Text>
-          </>
-        )}
-      </Pressable>
-
-      <View style={styles.toggle}>
-        {(["expense", "income"] as TxnType[]).map((t) => (
-          <Pressable
-            key={t}
-            style={[styles.toggleBtn, type === t && styles.toggleBtnActive]}
-            onPress={() => setType(t)}
-          >
-            <Text style={[styles.toggleText, type === t && styles.toggleTextActive]}>
-              {t === "expense" ? "Expense" : "Income"}
-            </Text>
-          </Pressable>
-        ))}
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={[styles.header, { paddingTop: insets.top + theme.space.md }]}>
+        <Text style={styles.screenTitle}>{isIncome ? "Log income" : "Log spending"}</Text>
       </View>
 
-      <Text style={styles.label}>Amount (RM)</Text>
-      <TextInput
-        style={styles.amountInput}
-        placeholder="0.00"
-        placeholderTextColor={theme.muted}
-        keyboardType="decimal-pad"
-        value={amount}
-        onChangeText={setAmount}
-      />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Segmented
+          options={[
+            { key: "expense", label: "Expense" },
+            { key: "income", label: "Income" },
+          ]}
+          activeKey={type}
+          onSelect={(k) => changeType(k as TxnType)}
+        />
 
-      <Text style={styles.label}>Category</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-        {CATEGORIES.map((c) => {
-          const active = category === c.id;
-          return (
-            <Pressable
-              key={c.id}
-              style={[styles.chip, active && styles.chipActive]}
-              onPress={() => setCategory(c.id)}
-            >
-              <Ionicons name={c.icon as any} size={16} color={active ? "#fff" : theme.primary} />
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.label}</Text>
-            </Pressable>
-          );
-        })}
+        {/* Amount — the one thing this screen is really for */}
+        <View style={[styles.amountBox, { backgroundColor: accent + "14" }]}>
+          <Text style={[styles.amountLabel, { color: accent }]}>
+            {isIncome ? "AMOUNT RECEIVED" : "AMOUNT SPENT"}
+          </Text>
+          <View style={styles.amountRow}>
+            <Text style={[styles.currency, { color: accent }]}>RM</Text>
+            <TextInput
+              style={styles.amountInput}
+              placeholder="0.00"
+              placeholderTextColor={theme.border}
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+            />
+          </View>
+        </View>
+
+        {/* Receipt scan — a solid card, not a dashed dropzone */}
+        <Pressable
+          style={({ pressed }) => [styles.scan, pressed && { opacity: 0.7 }]}
+          onPress={onScanPress}
+          disabled={scanning}
+        >
+          <View style={styles.scanIcon}>
+            {scanning ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Ionicons name="scan-outline" size={19} color={theme.primary} />
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.scanTitle}>
+              {scanning ? "Reading receipt…" : "Scan a receipt"}
+            </Text>
+            <Text style={styles.scanSub}>
+              {scanning ? "Kapy is working it out" : "Let Kapy fill this in for you"}
+            </Text>
+          </View>
+          {!scanning && (
+            <Ionicons name="chevron-forward" size={18} color={theme.muted} />
+          )}
+        </Pressable>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>DESCRIPTION</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={isIncome ? "e.g. August salary" : "e.g. lunch with member"}
+            placeholderTextColor={theme.muted}
+            value={note}
+            onChangeText={setNote}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <DateField value={date} onChange={setDate} label="WHEN" />
+        </View>
+
+        <View style={styles.field}>
+          <CategoryField
+            value={category}
+            onChange={setCategory}
+            categories={categories}
+          />
+
+          {/* Needs / Wants comes from the category, it isn't a separate choice */}
+          {!isIncome && !!selected && (
+            <View style={styles.hint}>
+              <Ionicons
+                name={
+                  selected.type === "savings"
+                    ? "wallet-outline"
+                    : selected.type === "needs"
+                      ? "shield-checkmark-outline"
+                      : "heart-outline"
+                }
+                size={14}
+                color={theme.muted}
+              />
+              <Text style={styles.hintText}>
+                {selected.type === "savings" ? (
+                  <>
+                    Goes to <Text style={styles.hintStrong}>Savings</Text> — set aside,
+                    not spent
+                  </>
+                ) : (
+                  <>
+                    Counts as{" "}
+                    <Text style={styles.hintStrong}>
+                      {selected.type === "needs" ? "Needs" : "Wants"}
+                    </Text>{" "}
+                    in your 50/30/20 split
+                  </>
+                )}
+              </Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
-      <Text style={styles.label}>Note (optional)</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. lunch with member"
-        placeholderTextColor={theme.muted}
-        value={note}
-        onChangeText={setNote}
-      />
-
-      <Pressable style={[styles.save, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
-        <Text style={styles.saveText}>{saving ? "Saving..." : "Save"}</Text>
-      </Pressable>
-    </ScrollView>
+      {/* Save sits on a bar of its own so it's always reachable */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + theme.space.sm }]}>
+        <Pressable
+          style={({ pressed }) => [styles.save, (saving || pressed) && { opacity: 0.75 }]}
+          onPress={save}
+          disabled={saving}
+        >
+          <Text style={styles.saveText}>
+            {saving ? "Saving…" : isIncome ? "Save income" : "Save transaction"}
+          </Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
-  content: { padding: 20, gap: 12 },
-  title: { fontSize: 22, fontWeight: "700", color: theme.text, marginBottom: 4 },
+  header: { paddingHorizontal: theme.screenPadding, paddingBottom: theme.space.base },
+  screenTitle: { fontSize: theme.size.title, fontWeight: "800", color: theme.text },
+  content: {
+    paddingHorizontal: theme.screenPadding,
+    paddingBottom: theme.space.xl,
+    gap: theme.space.base,
+  },
+
+  amountBox: {
+    borderRadius: theme.radius.lg,
+    paddingVertical: theme.space.xl,
+    paddingHorizontal: theme.space.lg,
+    alignItems: "center",
+  },
+  amountLabel: {
+    fontSize: theme.size.caption,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    opacity: 0.8,
+  },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+    marginTop: theme.space.sm,
+  },
+  currency: { fontSize: theme.size.title, fontWeight: "800" },
+  amountInput: {
+    fontSize: 42,
+    fontWeight: "800",
+    color: theme.text,
+    letterSpacing: -1.5,
+    minWidth: 120,
+    padding: 0,
+    textAlign: "left",
+  },
+
   scan: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.primary,
-    borderStyle: "dashed",
+    gap: theme.space.md,
     backgroundColor: theme.card,
-  },
-  scanText: { color: theme.primary, fontSize: 14, fontWeight: "600" },
-  toggle: { flexDirection: "row", backgroundColor: theme.card, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: theme.border },
-  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: "center" },
-  toggleBtnActive: { backgroundColor: theme.primary },
-  toggleText: { color: theme.muted, fontWeight: "600" },
-  toggleTextActive: { color: "#fff" },
-  label: { fontSize: 14, color: theme.text, fontWeight: "500", marginTop: 6 },
-  amountInput: {
-    backgroundColor: theme.card,
+    borderRadius: theme.radius.md,
+    padding: theme.space.md,
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 28,
-    fontWeight: "700",
-    color: theme.text,
+    ...theme.shadowSm,
+  },
+  scanIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: theme.primary + "1A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanTitle: { fontSize: theme.size.body, fontWeight: "700", color: theme.text },
+  scanSub: { fontSize: theme.size.caption, color: theme.muted, marginTop: 1 },
+
+  // Every label on this screen now uses one style. It previously mixed
+  // sentence case and uppercase micro-labels, which read as unfinished.
+  field: { gap: theme.space.sm },
+  label: {
+    fontSize: theme.size.caption,
+    fontWeight: "800",
+    color: theme.muted,
+    letterSpacing: 0.8,
   },
   input: {
     backgroundColor: theme.card,
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space.base,
+    paddingVertical: theme.space.base,
+    fontSize: theme.size.body,
     color: theme.text,
   },
-  chips: { flexDirection: "row" },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
+
+  hint: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: theme.space.xs },
+  hintText: { flex: 1, fontSize: theme.size.caption, color: theme.muted },
+  hintStrong: { fontWeight: "800", color: theme.text },
+
+  footer: {
+    paddingHorizontal: theme.screenPadding,
+    paddingTop: theme.space.md,
     backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-    marginRight: 8,
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
   },
-  chipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
-  chipText: { color: theme.text, fontSize: 13, fontWeight: "500" },
-  chipTextActive: { color: "#fff" },
-  save: { backgroundColor: theme.primary, borderRadius: 12, padding: 16, alignItems: "center", marginTop: 10 },
-  saveText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  save: {
+    backgroundColor: theme.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.space.base + 2,
+    alignItems: "center",
+    ...theme.shadowSm,
+  },
+  saveText: { color: theme.onDark, fontSize: theme.size.body, fontWeight: "800" },
 });

@@ -13,12 +13,26 @@
 //   npx supabase functions deploy kapy
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { toTimestamp, validateDateString } from "../_shared/date.ts";
+import { logDbError, logProviderError, logUnexpected } from "../_shared/log.ts";
 
-const MODEL = "gemini-flash-latest";
+// Pinned, not `gemini-flash-latest`. An alias re-points whenever Google ships
+// a new generation, which can change tone, output shape, latency and price
+// with no deploy on our side — fine while prototyping, wrong for a shipped
+// app. Override with a GEMINI_MODEL secret to switch without a code change:
+//   npx supabase secrets set GEMINI_MODEL=gemini-2.5-flash
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.7-flash";
 
 // Gemini can call a tool, read the result, and want to call another. Bound the
 // loop so a confused model can't spin forever on our bill.
 const MAX_TOOL_ROUNDS = 3;
+
+// Abuse limits. verify_jwt keeps out anonymous callers, but signup is open —
+// so any account could otherwise post a huge history and run up the Gemini
+// bill. These caps are deliberately generous for real conversations.
+const MAX_HISTORY = 20; // messages kept from the end of the conversation
+const MAX_CHARS = 4000; // per message
+const MAX_SUMMARY = 4000; // the financial summary the client sends
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -113,6 +127,13 @@ async function callGemini(
                       enum: categories,
                       description: "Closest matching category id.",
                     },
+                    date: {
+                      type: "string",
+                      description:
+                        "Date it happened, as YYYY-MM-DD. Only set this when the user " +
+                        "gave a date or it came from a scanned receipt. Omit it for " +
+                        "anything happening now — never guess a date.",
+                    },
                     note: {
                       type: "string",
                       description:
@@ -131,8 +152,8 @@ async function callGemini(
   );
 
   if (!res.ok) {
-    console.error("gemini error", res.status, await res.text());
-    throw new Error("gemini_failed");
+    await logProviderError("kapy", res);
+    throw new Error("provider_failed");
   }
 
   const data = await res.json();
@@ -185,8 +206,18 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid request body." }, 400);
   }
 
+  // Trim before anything else, so an oversized payload can't reach Gemini.
+  const msgs = history
+    .slice(-MAX_HISTORY)
+    .map((m) => ({
+      role: m.role === "model" ? ("model" as const) : ("user" as const),
+      text: String(m.text ?? "").slice(0, MAX_CHARS),
+    }))
+    .filter((m) => m.text.length > 0);
+
+  financialSummary = financialSummary.slice(0, MAX_SUMMARY);
+
   // Gemini rejects a conversation that opens on the model's turn.
-  const msgs = [...history];
   while (msgs.length && msgs[0].role === "model") msgs.shift();
   if (msgs.length === 0) {
     return json({ error: "No message to reply to." }, 400);
@@ -248,20 +279,26 @@ Deno.serve(async (req: Request) => {
               error: "Amount must be a positive number. Ask the user again.",
             };
           } else {
+            // A date the model supplied is only used once it survives the
+            // same range check the receipt scanner applies. Anything it
+            // invents or misreads falls back to now, which is what this did
+            // unconditionally before.
+            const validDate = validateDateString(call.args?.date);
+
             const { error } = await supabase.from("transactions").insert({
               user_id: user.id,
               amount,
               type,
               category,
               note,
-              date: new Date().toISOString(),
+              date: validDate ? toTimestamp(validDate) : new Date().toISOString(),
             });
 
             result = error
               ? { success: false, error: "Could not save it. Tell the user to try again." }
               : { success: true, amount, type, category };
 
-            if (error) console.error("insert failed:", error);
+            if (error) logDbError("kapy.add_transaction", error);
           }
         }
 
@@ -279,7 +316,7 @@ Deno.serve(async (req: Request) => {
         "I got a bit tangled up there 🦫 could you say that again more simply?",
     });
   } catch (e) {
-    console.error("kapy failed:", e);
+    logUnexpected("kapy", e);
     return json({ error: "Kapy couldn't reply right now. Try again." }, 500);
   }
 });

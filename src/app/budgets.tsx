@@ -1,49 +1,46 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CATEGORIES } from "../constants/categories";
-import { theme } from "../constants/theme";
-import { useAuth } from "../lib/auth-context";
 import {
-    getUserProfile,
-    listenTransactions,
-    saveBudgets,
-    type Transaction,
-    type UserProfile,
-} from "../lib/db";
-
-const fmt = (n: number) => `RM ${n.toFixed(2)}`;
-const isThisMonth = (d: Date) => {
-  const now = new Date();
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-};
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ProgressBar } from "../components/ui/cards";
+import { ScreenHeader } from "../components/ui/controls";
+import { CATEGORIES } from "../constants/categories";
+import { colorForCategory, theme } from "../constants/theme";
+import { useAuth } from "../lib/auth-context";
+import { saveBudgets } from "../lib/db";
+import { useFinance } from "../lib/finance-context";
+import { fmt, isThisMonth } from "../lib/format";
 
 export default function Budgets() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  // Shares the app-wide subscription rather than opening its own.
+  const { transactions, profile, refreshProfile } = useFinance();
+
   const [local, setLocal] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  // Load profile + transactions directly (this screen is outside the tabs provider)
+  // Seed the inputs from the saved budgets once the profile arrives.
   useEffect(() => {
-    if (!user) return;
-    getUserProfile(user.id).then((p) => {
-      setProfile(p);
-      const o: Record<string, string> = {};
-      const b = p?.budgets ?? {};
-      Object.entries(b).forEach(([id, val]) => {
-        o[id] = String(val);
-      });
-      setLocal(o);
+    if (!profile) return;
+    const o: Record<string, string> = {};
+    Object.entries(profile.budgets ?? {}).forEach(([id, val]) => {
+      o[id] = String(val);
     });
-    const unsub = listenTransactions(user.id, setTransactions);
-    return unsub;
-  }, [user]);
+    setLocal(o);
+  }, [profile]);
 
   const spentByCat: Record<string, number> = {};
   transactions.forEach((t) => {
@@ -52,6 +49,7 @@ export default function Budgets() {
     }
   });
 
+  // ── unchanged: save ──────────────────────────────────────
   const save = async () => {
     if (!user) {
       Alert.alert("Guest mode", "Sign up to save budgets.");
@@ -65,6 +63,8 @@ export default function Budgets() {
     setSaving(true);
     try {
       await saveBudgets(user.id, obj);
+      // Refresh through the shared provider so Insights sees the new limits.
+      await refreshProfile();
       router.back();
     } catch (e: any) {
       Alert.alert("Couldn't save", e.message ?? "Try again.");
@@ -73,31 +73,52 @@ export default function Budgets() {
     }
   };
 
-  return (
-    <View style={styles.screen}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={26} color={theme.text} />
-        </Pressable>
-        <Text style={styles.title}>Monthly budgets</Text>
-        <View style={{ width: 26 }} />
-      </View>
+  const setCount = Object.values(local).filter((v) => (parseFloat(v) || 0) > 0).length;
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.hint}>Set a monthly limit per category. Leave blank for no limit.</Text>
+  return (
+    <KeyboardAvoidingView
+      style={[styles.screen, { paddingTop: insets.top + theme.space.sm }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScreenHeader title="Monthly budgets" onBack={() => router.back()} />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.banner}>
+          <Ionicons name="information-circle-outline" size={18} color={theme.primaryDark} />
+          <Text style={styles.bannerText}>
+            Set a monthly limit per category. Leave blank for no limit.
+            {setCount > 0 ? `  ${setCount} set.` : ""}
+          </Text>
+        </View>
+
         {CATEGORIES.map((c) => {
           const spent = spentByCat[c.id] ?? 0;
           const limit = parseFloat(local[c.id]) || 0;
           const pct = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
           const over = limit > 0 && spent > limit;
+          const tint = colorForCategory(c.id);
+
           return (
-            <View key={c.id} style={styles.row}>
+            <View key={c.id} style={[styles.row, limit > 0 && { borderColor: tint + "66" }]}>
               <View style={styles.rowTop}>
-                <View style={styles.catInfo}>
-                  <Ionicons name={c.icon as any} size={18} color={theme.primary} />
-                  <Text style={styles.catLabel}>{c.label}</Text>
+                <View style={[styles.catIcon, { backgroundColor: tint + "22" }]}>
+                  <Ionicons name={c.icon as any} size={18} color={tint} />
                 </View>
-                <View style={styles.inputWrap}>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.catLabel} numberOfLines={1}>
+                    {c.label}
+                  </Text>
+                  <Text style={styles.catType}>
+                    {c.type === "savings" ? "Savings" : c.type === "needs" ? "Needs" : "Wants"}
+                  </Text>
+                </View>
+
+                <View style={[styles.inputWrap, limit > 0 && { borderColor: tint }]}>
                   <Text style={styles.rm}>RM</Text>
                   <TextInput
                     style={styles.input}
@@ -109,11 +130,10 @@ export default function Budgets() {
                   />
                 </View>
               </View>
+
               {limit > 0 && (
-                <View style={{ marginTop: 8 }}>
-                  <View style={styles.track}>
-                    <View style={[styles.fill, { width: `${pct}%`, backgroundColor: over ? theme.danger : theme.accent }]} />
-                  </View>
+                <View style={{ marginTop: theme.space.md }}>
+                  <ProgressBar pct={pct} color={over ? theme.danger : tint} height={8} />
                   <Text style={[styles.spentText, over && { color: theme.danger }]}>
                     {fmt(spent)} {over ? "· over budget!" : `of ${fmt(limit)}`}
                   </Text>
@@ -124,32 +144,91 @@ export default function Budgets() {
         })}
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={[styles.save, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + theme.space.md }]}>
+        <Pressable
+          style={({ pressed }) => [styles.save, (saving || pressed) && { opacity: 0.7 }]}
+          onPress={save}
+          disabled={saving}
+        >
           <Text style={styles.saveText}>{saving ? "Saving..." : "Save budgets"}</Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 12 },
-  title: { fontSize: 18, fontWeight: "700", color: theme.text },
-  content: { padding: 16, gap: 12 },
-  hint: { fontSize: 13, color: theme.muted, marginBottom: 4 },
-  row: { backgroundColor: theme.card, borderRadius: theme.radius.md, padding: 14, borderWidth: 1, borderColor: theme.border },
-  rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  catInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
-  catLabel: { fontSize: 15, fontWeight: "600", color: theme.text },
-  inputWrap: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 10, borderWidth: 1, borderColor: theme.border },
-  rm: { fontSize: 13, color: theme.muted },
-  input: { width: 70, paddingVertical: 8, fontSize: 15, color: theme.text, textAlign: "right" },
-  track: { height: 8, borderRadius: 4, backgroundColor: theme.border, overflow: "hidden" },
-  fill: { height: 8, borderRadius: 4 },
-  spentText: { fontSize: 12, color: theme.muted, marginTop: 5 },
-  footer: { padding: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.card },
-  save: { backgroundColor: theme.primary, borderRadius: 12, padding: 16, alignItems: "center" },
-  saveText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  content: {
+    paddingHorizontal: theme.screenPadding,
+    paddingBottom: theme.space.xl,
+    gap: theme.space.sm,
+  },
+
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space.sm,
+    backgroundColor: theme.accentSoft,
+    borderRadius: theme.radius.md,
+    padding: theme.space.md,
+    marginBottom: theme.space.xs,
+  },
+  bannerText: { flex: 1, fontSize: theme.size.label, color: theme.primaryDark, lineHeight: 18 },
+
+  row: {
+    backgroundColor: theme.card,
+    borderRadius: theme.radius.md,
+    padding: theme.space.base,
+    borderWidth: 1,
+    borderColor: theme.border,
+    ...theme.shadowSm,
+  },
+  rowTop: { flexDirection: "row", alignItems: "center", gap: theme.space.md },
+  catIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: theme.radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catLabel: { fontSize: theme.size.body, fontWeight: "700", color: theme.text },
+  catType: { fontSize: theme.size.caption, color: theme.muted, marginTop: 1 },
+
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: theme.bg,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: theme.space.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  rm: { fontSize: theme.size.caption, color: theme.muted, fontWeight: "700" },
+  input: {
+    width: 62,
+    paddingVertical: theme.space.sm + 2,
+    fontSize: theme.size.body,
+    fontWeight: "700",
+    color: theme.text,
+    textAlign: "right",
+  },
+
+  spentText: { fontSize: theme.size.caption, color: theme.muted, marginTop: 6 },
+
+  footer: {
+    paddingHorizontal: theme.screenPadding,
+    paddingTop: theme.space.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+    backgroundColor: theme.card,
+  },
+  save: {
+    backgroundColor: theme.primaryDark,
+    borderRadius: theme.radius.md,
+    padding: theme.space.base + 2,
+    alignItems: "center",
+  },
+  saveText: { color: "#fff", fontSize: theme.size.body, fontWeight: "800" },
 });

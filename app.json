@@ -16,7 +16,8 @@
         "foregroundImage": "./src/assets/capy-chill.png",
         "monochromeImage": "./src/assets/capy-chill.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.tabara"
     },
     "web": {
       "output": "static",

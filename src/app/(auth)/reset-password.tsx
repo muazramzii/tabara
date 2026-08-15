@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
@@ -13,37 +13,48 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { theme } from "../../constants/theme";
 import { PasswordRules } from "../../components/ui/password-rules";
-import { SocialAuth } from "../../components/ui/social-buttons";
-import { isValidPassword, validateUsername } from "../../lib/password";
+import { theme } from "../../constants/theme";
+import { isValidPassword } from "../../lib/password";
 import { supabase } from "../../lib/supabase";
 
 const capy = require("../../assets/capy-chill.png");
 
-export default function Signup() {
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
+/**
+ * Second half of the reset: the six-digit code from the email, plus the new
+ * password.
+ *
+ * A code rather than a tapped link. A link has to deep-link back into the app,
+ * which is unreliable in Expo Go (the scheme is exp://, not tabara://) and
+ * needs the redirect URL allow-listed. A code works from any mail client on
+ * any device, including the emulator.
+ */
+export default function ResetPassword() {
+  const { email } = useLocalSearchParams<{ email?: string }>();
+
+  const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // ── unchanged: auth + validation ─────────────────────────
-  const handleSignup = async () => {
-    const nameError = validateUsername(username);
-    if (nameError) {
-      Alert.alert("Check your name", nameError);
+  const mismatch = confirm.length > 0 && password !== confirm;
+  const matched = confirm.length > 0 && password === confirm;
+
+  const handleReset = async () => {
+    if (!email) {
+      Alert.alert("Something went wrong", "Start again from the login screen.");
+      router.replace("/(auth)/forgot-password");
       return;
     }
-    if (!email.trim()) {
-      Alert.alert("Hold on", "Enter your email address.");
+    if (code.trim().length < 6) {
+      Alert.alert("Check the code", "Enter the 6-digit code from your email.");
       return;
     }
     if (!isValidPassword(password)) {
       Alert.alert(
         "Password too weak",
-        "Your password needs to meet every requirement listed under the field."
+        "Your new password needs to meet every requirement listed."
       );
       return;
     }
@@ -54,38 +65,33 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        // Carried into raw_user_meta_data, which the on_auth_user_created
-        // trigger reads to create the profile row. Sending it here rather
-        // than writing the row from the app is what makes this work when
-        // email confirmation is on and there's no session yet.
-        options: { data: { username: username.trim() } },
+      // The code proves the person holds the mailbox. Verifying it returns a
+      // real session, which is what authorises the password change below —
+      // updateUser alone would fail without one.
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        email: String(email),
+        token: code.trim(),
+        type: "recovery",
       });
-      if (error) throw error;
-
-      // With email confirmation enabled there's no session yet, so we can't
-      // write a profile — send them to log in after confirming.
-      if (!data.session) {
+      if (otpError) {
         Alert.alert(
-          "Almost there",
-          "Check your email for a confirmation link, then log in."
+          "That code didn't work",
+          "It may have expired or been typed wrong. Request a new one."
         );
-        router.replace("/(auth)/login");
         return;
       }
 
-      router.replace("/onboarding");
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      Alert.alert("Password updated", "You're all set — welcome back 🦫");
+      router.replace("/(tabs)");
     } catch (e: any) {
-      Alert.alert("Sign up failed", e.message ?? "Try again.");
+      Alert.alert("Couldn't update password", e.message ?? "Try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  const mismatch = confirm.length > 0 && password !== confirm;
-  const matched = confirm.length > 0 && password === confirm;
 
   return (
     <KeyboardAvoidingView
@@ -98,57 +104,45 @@ export default function Signup() {
         showsVerticalScrollIndicator={false}
       >
         <Image source={capy} style={styles.capy} resizeMode="contain" />
-        <Text style={styles.title}>Create your account</Text>
-        <Text style={styles.subtitle}>Your capybara is waiting.</Text>
+        <Text style={styles.title}>Check your email</Text>
+        <Text style={styles.subtitle}>
+          {email
+            ? `We sent a 6-digit code to ${email}. Enter it below with your new password.`
+            : "Enter the code we sent you, along with your new password."}
+        </Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>YOUR NAME</Text>
+          <Text style={styles.label}>RESET CODE</Text>
           <View style={styles.inputWrap}>
-            <Ionicons name="person-outline" size={18} color={theme.muted} />
+            <Ionicons name="keypad-outline" size={18} color={theme.muted} />
             <TextInput
-              style={styles.input}
-              placeholder="What should Kapy call you?"
+              style={[styles.input, styles.codeInput]}
+              placeholder="123456"
               placeholderTextColor={theme.muted}
-              autoCapitalize="words"
-              autoComplete="name"
-              maxLength={20}
-              value={username}
-              onChangeText={setUsername}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={code}
+              onChangeText={setCode}
             />
           </View>
 
-          <Text style={[styles.label, { marginTop: theme.space.base }]}>EMAIL</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="mail-outline" size={18} color={theme.muted} />
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={theme.muted}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-
-          <Text style={[styles.label, { marginTop: theme.space.base }]}>PASSWORD</Text>
+          <Text style={[styles.label, { marginTop: theme.space.base }]}>
+            NEW PASSWORD
+          </Text>
           <View style={styles.inputWrap}>
             <Ionicons name="lock-closed-outline" size={18} color={theme.muted} />
             <TextInput
               style={styles.input}
-              placeholder="Create a password"
+              placeholder="Create a new password"
               placeholderTextColor={theme.muted}
-              secureTextEntry={!showPassword}
+              secureTextEntry={!show}
               value={password}
               onChangeText={setPassword}
               returnKeyType="next"
             />
-            {/* One toggle for both fields — hiding the confirmation while
-                showing the original defeats the point of retyping it. */}
-            <Pressable onPress={() => setShowPassword((s) => !s)} hitSlop={8}>
+            <Pressable onPress={() => setShow((s) => !s)} hitSlop={8}>
               <Ionicons
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                name={show ? "eye-off-outline" : "eye-outline"}
                 size={18}
                 color={theme.muted}
               />
@@ -158,7 +152,7 @@ export default function Signup() {
           {password.length > 0 && <PasswordRules value={password} />}
 
           <Text style={[styles.label, { marginTop: theme.space.base }]}>
-            CONFIRM PASSWORD
+            CONFIRM NEW PASSWORD
           </Text>
           <View
             style={[
@@ -170,12 +164,12 @@ export default function Signup() {
             <Ionicons name="lock-closed-outline" size={18} color={theme.muted} />
             <TextInput
               style={styles.input}
-              placeholder="Retype your password"
+              placeholder="Retype your new password"
               placeholderTextColor={theme.muted}
-              secureTextEntry={!showPassword}
+              secureTextEntry={!show}
               value={confirm}
               onChangeText={setConfirm}
-              onSubmitEditing={handleSignup}
+              onSubmitEditing={handleReset}
               returnKeyType="go"
             />
             {matched && (
@@ -188,18 +182,21 @@ export default function Signup() {
           )}
 
           <Pressable
-            style={({ pressed }) => [styles.button, (loading || pressed) && { opacity: 0.7 }]}
-            onPress={handleSignup}
+            style={({ pressed }) => [
+              styles.button,
+              (loading || pressed) && { opacity: 0.7 },
+            ]}
+            onPress={handleReset}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>{loading ? "Creating…" : "Sign up"}</Text>
+            <Text style={styles.buttonText}>
+              {loading ? "Updating…" : "Set new password"}
+            </Text>
           </Pressable>
-
-          <SocialAuth />
         </View>
 
-        <Link href="/(auth)/login" style={styles.link}>
-          Already have an account? <Text style={styles.linkBold}>Log in</Text>
+        <Link href="/(auth)/forgot-password" style={styles.link}>
+          Didn&apos;t get it? <Text style={styles.linkBold}>Send again</Text>
         </Link>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -209,21 +206,22 @@ export default function Signup() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
   content: { flexGrow: 1, justifyContent: "center", padding: theme.space.xl },
-  capy: { width: 96, height: 96, alignSelf: "center" },
+  capy: { width: 84, height: 84, alignSelf: "center" },
   title: {
     fontSize: theme.size.display,
     fontWeight: "800",
     color: theme.text,
     textAlign: "center",
     letterSpacing: -0.4,
-    marginTop: theme.space.base,
+    marginTop: theme.space.md,
   },
   subtitle: {
     fontSize: theme.size.body,
-    color: theme.muted,
+    color: theme.primaryDark,
     textAlign: "center",
-    marginTop: 2,
-    marginBottom: theme.space.xl,
+    marginTop: theme.space.xs,
+    marginBottom: theme.space.lg,
+    lineHeight: 21,
   },
   card: {
     backgroundColor: theme.card,
@@ -256,6 +254,9 @@ const styles = StyleSheet.create({
     fontSize: theme.size.body,
     color: theme.text,
   },
+  // Codes are read digit by digit — spacing them out makes transcription
+  // errors visible before submitting.
+  codeInput: { letterSpacing: 8, fontWeight: "800", fontSize: 18 },
   helper: {
     fontSize: theme.size.caption,
     color: theme.danger,

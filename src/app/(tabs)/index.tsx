@@ -1,17 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { CATEGORIES } from "../../constants/categories";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BalanceCard, Card, ProgressBar, ProgressRow, SectionHeader } from "../../components/ui/cards";
+import { QuickActions } from "../../components/ui/controls";
+import { StreakCard } from "../../components/ui/gamification";
+import { FadeInView, PopIn } from "../../components/ui/motion";
+import { EmptyState, ErrorState, TransactionSkeleton } from "../../components/ui/states";
+import { TransactionItem } from "../../components/ui/transaction-item";
 import { theme } from "../../constants/theme";
+import { useAuth } from "../../lib/auth-context";
 import { useFinance } from "../../lib/finance-context";
-
-const fmt = (n: number) => `RM ${n.toFixed(2)}`;
-const cat = (id: string) => CATEGORIES.find((c) => c.id === id);
-const isThisMonth = (d: Date) => {
-  const now = new Date();
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-};
-const monthName = new Date().toLocaleDateString("en-MY", { month: "long" });
+import { buildAlerts, streak, weekActivity } from "../../lib/insights";
+import { cat, fmt, isThisMonth, monthLabel } from "../../lib/format";
 
 const CAPY = {
   chill: require("../../assets/capy-chill.png"),
@@ -20,7 +21,15 @@ const CAPY = {
   party: require("../../assets/capy-party.png"),
 };
 
-function moodKey(spent: number, budget: number): keyof typeof CAPY {
+function moodKey(
+  spent: number,
+  budget: number,
+  saved: number,
+  goal: number
+): keyof typeof CAPY {
+  // Hitting the savings goal is the one moment worth celebrating, and it's
+  // what capy-party.png was drawn for — until now nothing ever showed it.
+  if (goal > 0 && saved >= goal) return "party";
   if (budget <= 0) return "chill";
   const ratio = spent / budget;
   if (ratio <= 0.7) return "chill";
@@ -28,134 +37,203 @@ function moodKey(spent: number, budget: number): keyof typeof CAPY {
   return "sad";
 }
 
-function BreakdownRow({
-  label,
-  spent,
-  target,
-  color,
-  goodIsHigh = false,
-}: {
-  label: string;
-  spent: number;
-  target: number;
-  color: string;
-  goodIsHigh?: boolean;
-}) {
-  const pct = target > 0 ? Math.min((spent / target) * 100, 100) : 0;
-  const over = !goodIsHigh && target > 0 && spent > target;
-  const barColor = over ? theme.danger : color;
-  return (
-    <View style={styles.bdRow}>
-      <View style={styles.bdHeader}>
-        <Text style={styles.bdLabel}>{label}</Text>
-        <Text style={[styles.bdAmt, over && { color: theme.danger }]}>
-          {fmt(spent)} <Text style={styles.bdTarget}>/ {fmt(target)}</Text>
-        </Text>
-      </View>
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${pct}%`, backgroundColor: barColor }]} />
-      </View>
-    </View>
-  );
-}
-
 export default function Home() {
-  const { derived, transactions, loading } = useFinance();
-  const { mood, income, spent, savingsGoal } = derived;
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { derived, transactions, profile, loading, error, retry } = useFinance();
+  const { mood, income, spent, saved, balance, savingsGoal } = derived;
   const recent = transactions.slice(0, 4);
-  const capy = CAPY[moodKey(spent, derived.budget)];
+  const celebrating = savingsGoal > 0 && saved >= savingsGoal;
+  const capy = CAPY[moodKey(spent, derived.budget, saved, savingsGoal)];
 
-  const balance = income - spent;
-
-  // 50 / 30 / 20 breakdown
-  const expensesMonth = transactions.filter((t) => t.type === "expense" && isThisMonth(t.date));
-  const needsSpent = expensesMonth.filter((t) => cat(t.category)?.type === "needs").reduce((s, t) => s + t.amount, 0);
-  const wantsSpent = expensesMonth.filter((t) => cat(t.category)?.type === "wants").reduce((s, t) => s + t.amount, 0);
+  // 50 / 30 / 20 breakdown. Savings is excluded from needs/wants because it
+  // has its own row — otherwise a savings transfer would be counted twice.
+  const expensesMonth = transactions.filter(
+    (t) => t.type === "expense" && t.category !== "savings" && isThisMonth(t.date)
+  );
+  const needsSpent = expensesMonth
+    .filter((t) => cat(t.category)?.type === "needs")
+    .reduce((s, t) => s + t.amount, 0);
+  const wantsSpent = expensesMonth
+    .filter((t) => cat(t.category)?.type === "wants")
+    .reduce((s, t) => s + t.amount, 0);
   const needsTarget = income * 0.5;
   const wantsTarget = income * 0.3;
   const savingsTarget = savingsGoal > 0 ? savingsGoal : income * 0.2;
-  const saved = Math.max(balance, 0);
+
+  const savingsPct = savingsTarget > 0 ? Math.min((saved / savingsTarget) * 100, 100) : 0;
+  const toSave = Math.max(savingsTarget - saved, 0);
+
+  // Greeting uses the real account — never a hardcoded name. The name chosen
+  // at signup wins; the email prefix is only a fallback for accounts created
+  // before usernames existed.
+  const displayName =
+    profile?.username?.trim() ||
+    (user?.user_metadata?.username as string | undefined)?.trim() ||
+    (user?.email ? user.email.split("@")[0] : "there");
+  // Alerts are live conditions, not a stored feed — the badge shows how many
+  // are currently true.
+  const alertCount = buildAlerts(transactions, profile).length;
+  const logStreak = streak(transactions);
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + theme.space.md }]}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Header */}
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.greeting}>Hi there 👋</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting} numberOfLines={1}>
+            Hello, {displayName}! 👋
+          </Text>
           <Text style={styles.subGreeting}>Welcome back to Tabara</Text>
         </View>
-        <Pressable onPress={() => router.push("/profile")} hitSlop={8}>
+
+        <Pressable
+          onPress={() => router.push("/notifications")}
+          hitSlop={8}
+          style={styles.bell}
+          accessibilityLabel="Notifications"
+        >
+          <Ionicons name="notifications-outline" size={20} color={theme.primaryDark} />
+          {alertCount > 0 && <View style={styles.dot} />}
+        </Pressable>
+
+        <Pressable onPress={() => router.push("/profile")} hitSlop={8} accessibilityLabel="Profile">
           <Image source={CAPY.chill} style={styles.avatar} />
         </Pressable>
       </View>
 
-      {/* Balance card */}
-      <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>{monthName} balance</Text>
-        <Text style={styles.balanceValue}>{fmt(balance)}</Text>
-        <View style={styles.balanceSplit}>
-          <View style={styles.splitItem}>
-            <Ionicons name="arrow-up-circle" size={18} color="#A8D5BA" />
-            <View>
-              <Text style={styles.splitLabel}>Income</Text>
-              <Text style={styles.splitValue}>{fmt(income)}</Text>
-            </View>
-          </View>
-          <View style={styles.splitDivider} />
-          <View style={styles.splitItem}>
-            <Ionicons name="arrow-down-circle" size={18} color="#E9A8A8" />
-            <View>
-              <Text style={styles.splitLabel}>Expense</Text>
-              <Text style={styles.splitValue}>{fmt(spent)}</Text>
-            </View>
-          </View>
-        </View>
-      </View>
+      <FadeInView delay={40}>
+        <BalanceCard
+          label={`${monthLabel()} balance`}
+          balance={balance}
+          income={income}
+          expense={spent}
+        />
+      </FadeInView>
 
-      {/* Mood capy */}
-      <View style={styles.capyCard}>
-        <Image source={capy} style={styles.capyImg} resizeMode="contain" />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.capyMood}>{mood.title}</Text>
-          <Text style={styles.capySub}>{mood.subtitle}</Text>
-        </View>
-      </View>
+      {/* The habit hook — placed high because that's what makes it work. */}
+      <FadeInView delay={70}>
+        <StreakCard streak={logStreak} week={weekActivity(transactions)} />
+      </FadeInView>
 
-      {/* Budget breakdown */}
-      {income > 0 && (
-        <View style={styles.bdCard}>
-          <Text style={styles.bdTitle}>Budget breakdown</Text>
-          <Text style={styles.bdSub}>50 / 30 / 20 rule</Text>
-          <BreakdownRow label="Needs (50%)" spent={needsSpent} target={needsTarget} color={theme.primary} />
-          <BreakdownRow label="Wants (30%)" spent={wantsSpent} target={wantsTarget} color={theme.peach} />
-          <BreakdownRow label="Savings (20%)" spent={saved} target={savingsTarget} color={theme.accent} goodIsHigh />
-        </View>
-      )}
+      <FadeInView delay={130}>
+        <QuickActions
+          actions={[
+            { icon: "add", label: "Add", onPress: () => router.push("/(tabs)/add") },
+            { icon: "options-outline", label: "Budgets", onPress: () => router.push("/budgets") },
+            { icon: "chatbubble-ellipses-outline", label: "Ask Kapy", onPress: () => router.push("/(tabs)/kapy") },
+          ]}
+        />
+      </FadeInView>
+
+      {/* Kapy's mood — Tabara's personality, and the app's whole reason to
+          feel different from a bank app. Given room to actually be seen. */}
+      <FadeInView delay={160}>
+        <Card style={[styles.capyCard, celebrating && styles.capyCardParty]}>
+          <PopIn delay={260}>
+            <Image source={capy} style={styles.capyImg} resizeMode="contain" />
+          </PopIn>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.capyMood}>
+              {celebrating ? "Savings goal smashed! 🎉" : mood.title}
+            </Text>
+            <Text style={styles.capySub}>
+              {celebrating
+                ? `You've set aside ${fmt(saved)} this month. Kapy is proud of you.`
+                : mood.subtitle}
+            </Text>
+          </View>
+        </Card>
+      </FadeInView>
+
+      {/* Savings + Budget, side by side */}
+      <FadeInView delay={220} style={styles.pairRow}>
+        <Card style={styles.pairCard}>
+          <Text style={styles.pairTitle}>Total Savings</Text>
+          <Text style={styles.pairValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {fmt(saved)}
+          </Text>
+
+          {savingsTarget > 0 ? (
+            <>
+              <View style={{ marginTop: theme.space.md }}>
+                <ProgressBar pct={savingsPct} color={theme.accent} />
+              </View>
+              <Text style={styles.pairHint} numberOfLines={1}>
+                {toSave > 0 ? `To save: ${fmt(toSave)}` : "Goal reached 🎉"}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.pairHint}>Set a savings goal in Profile</Text>
+          )}
+
+          <Pressable onPress={() => router.push("/(tabs)/insights")} hitSlop={6}>
+            <Text style={styles.pairLink}>Check progress →</Text>
+          </Pressable>
+        </Card>
+
+        <Card style={styles.pairCard}>
+          <Text style={styles.pairTitle}>Budget Breakdown</Text>
+          {income > 0 ? (
+            <View style={{ marginTop: theme.space.md }}>
+              <ProgressRow
+                label="Needs (50%)"
+                spent={needsSpent}
+                target={needsTarget}
+                color={theme.info}
+              />
+              <ProgressRow
+                label="Wants (30%)"
+                spent={wantsSpent}
+                target={wantsTarget}
+                color={theme.peach}
+              />
+              <ProgressRow
+                label="Savings (20%)"
+                spent={saved}
+                target={savingsTarget}
+                color={theme.accent}
+                goodIsHigh
+              />
+            </View>
+          ) : (
+            <Text style={styles.pairHint}>Add your income to see the 50/30/20 split</Text>
+          )}
+        </Card>
+      </FadeInView>
 
       {/* Recent */}
-      <Text style={styles.sectionTitle}>Recent</Text>
+      <SectionHeader
+        title="Recent Transactions"
+        actionLabel={transactions.length > 4 ? "See all" : undefined}
+        onAction={transactions.length > 4 ? () => router.push("/(tabs)/history") : undefined}
+      />
+
       {loading ? (
-        <Text style={styles.placeholder}>Loading…</Text>
+        <TransactionSkeleton rows={3} />
+      ) : error ? (
+        <ErrorState
+          message="We couldn't load your transactions. Check your connection."
+          onRetry={retry}
+        />
       ) : recent.length === 0 ? (
-        <Text style={styles.placeholder}>No transactions yet. Tap Add to log your first one.</Text>
+        <EmptyState
+          capy="chill"
+          title="No transactions yet"
+          message="Start tracking your spending to understand your financial habits."
+          actionLabel="Add transaction"
+          onAction={() => router.push("/(tabs)/add")}
+        />
       ) : (
-        recent.map((t) => {
-          const c = cat(t.category);
-          return (
-            <View key={t.id} style={styles.txnRow}>
-              <View style={styles.txnIcon}>
-                <Ionicons name={(c?.icon ?? "pricetag-outline") as any} size={20} color={theme.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txnLabel}>{c?.label ?? t.category}</Text>
-                {!!t.note && <Text style={styles.txnNote}>{t.note}</Text>}
-              </View>
-              <Text style={[styles.txnAmount, { color: t.type === "income" ? theme.accent : theme.text }]}>
-                {t.type === "income" ? "+" : "−"}
-                {fmt(t.amount)}
-              </Text>
-            </View>
-          );
-        })
+        <View style={{ gap: theme.space.sm }}>
+          {recent.map((t) => (
+            <TransactionItem key={t.id} txn={t} />
+          ))}
+        </View>
       )}
     </ScrollView>
   );
@@ -163,61 +241,70 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
-  content: { padding: 20, gap: 14 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  greeting: { fontSize: 22, fontWeight: "800", color: theme.text },
-  subGreeting: { fontSize: 13, color: theme.muted, marginTop: 1 },
-  avatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: theme.border },
+  content: {
+    paddingHorizontal: theme.screenPadding,
+    paddingBottom: theme.space.xxl,
+    gap: theme.space.base,
+  },
 
-  balanceCard: { backgroundColor: theme.primaryDark, borderRadius: theme.radius.lg, padding: 20, ...theme.shadow },
-  balanceLabel: { color: "#E6DECF", fontSize: 14 },
-  balanceValue: { color: "#fff", fontSize: 36, fontWeight: "800", marginTop: 4 },
-  balanceSplit: { flexDirection: "row", alignItems: "center", marginTop: 16 },
-  splitItem: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
-  splitDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" },
-  splitLabel: { color: "#E6DECF", fontSize: 12 },
-  splitValue: { color: "#fff", fontSize: 15, fontWeight: "700", marginTop: 1 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: theme.space.md },
+  greeting: { fontSize: theme.size.title, fontWeight: "800", color: theme.text },
+  subGreeting: { fontSize: theme.size.label, color: theme.muted, marginTop: 1 },
+  bell: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.card,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  dot: {
+    position: "absolute",
+    top: 9,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.danger,
+    borderWidth: 1.5,
+    borderColor: theme.card,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.card,
+  },
 
   capyCard: {
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.lg,
-    padding: 18,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    borderWidth: 1,
-    borderColor: theme.border,
-    ...theme.shadow,
+    gap: theme.space.base,
+    paddingVertical: theme.space.base,
   },
-  capyImg: { width: 64, height: 64 },
-  capyMood: { fontSize: 16, fontWeight: "700", color: theme.text },
-  capySub: { fontSize: 13, color: theme.muted, marginTop: 2 },
+  capyCardParty: { backgroundColor: theme.accentSoft, borderColor: theme.accent },
+  capyImg: { width: 84, height: 84 },
+  capyMood: { fontSize: theme.size.section, fontWeight: "800", color: theme.text },
+  capySub: { fontSize: theme.size.label, color: theme.muted, marginTop: 3, lineHeight: 19 },
 
-  bdCard: { backgroundColor: theme.card, borderRadius: theme.radius.lg, padding: 18, borderWidth: 1, borderColor: theme.border, ...theme.shadow },
-  bdTitle: { fontSize: 16, fontWeight: "700", color: theme.text },
-  bdSub: { fontSize: 12, color: theme.muted, marginTop: 1, marginBottom: 14 },
-  bdRow: { marginBottom: 14 },
-  bdHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  bdLabel: { fontSize: 14, fontWeight: "600", color: theme.text },
-  bdAmt: { fontSize: 13, fontWeight: "700", color: theme.text },
-  bdTarget: { fontSize: 13, fontWeight: "400", color: theme.muted },
-  track: { height: 9, borderRadius: 5, backgroundColor: theme.border, overflow: "hidden" },
-  fill: { height: 9, borderRadius: 5 },
-
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: theme.text, marginTop: 6 },
-  placeholder: { color: theme.muted, fontSize: 14, paddingVertical: 8 },
-  txnRow: {
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.md,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: theme.border,
+  pairRow: { flexDirection: "row", gap: theme.space.md },
+  pairCard: { flex: 1, padding: theme.space.base },
+  pairTitle: { fontSize: theme.size.label, fontWeight: "800", color: theme.text },
+  pairValue: {
+    fontSize: theme.size.display - 4,
+    fontWeight: "800",
+    color: theme.text,
+    marginTop: theme.space.xs,
   },
-  txnIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: theme.bg, alignItems: "center", justifyContent: "center" },
-  txnLabel: { fontSize: 15, fontWeight: "600", color: theme.text },
-  txnNote: { fontSize: 12, color: theme.muted, marginTop: 1 },
-  txnAmount: { fontSize: 15, fontWeight: "700" },
+  pairHint: { fontSize: theme.size.caption, color: theme.muted, marginTop: theme.space.sm },
+  pairLink: {
+    fontSize: theme.size.caption,
+    fontWeight: "800",
+    color: theme.primary,
+    marginTop: theme.space.md,
+  },
 });

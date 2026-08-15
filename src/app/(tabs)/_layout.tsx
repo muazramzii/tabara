@@ -1,59 +1,114 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { theme } from "../../constants/theme";
-import { FinanceProvider } from "../../lib/finance-context";
+
+// Active tab gets a filled icon on a soft sage pill; inactive stays muted and
+// outlined. Same five routes as before — nothing added, nothing removed.
+function TabIcon({
+  name,
+  filled,
+  label,
+  focused,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  filled: keyof typeof Ionicons.glyphMap;
+  label: string;
+  focused: boolean;
+}) {
+  return (
+    <View style={styles.item}>
+      <View style={[styles.pill, focused && styles.pillActive]}>
+        <Ionicons
+          name={focused ? filled : name}
+          size={21}
+          color={focused ? theme.primaryDark : theme.muted}
+        />
+      </View>
+      <Text style={[styles.label, focused && styles.labelActive]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   return (
-    <FinanceProvider>
       <Tabs
         screenOptions={{
-          headerStyle: { backgroundColor: theme.bg },
-          headerShadowVisible: false,
-          headerTintColor: theme.text,
-          tabBarActiveTintColor: theme.primary,
-          tabBarInactiveTintColor: theme.muted,
-          tabBarStyle: { backgroundColor: theme.card, borderTopColor: theme.border },
+          // Screens render their own headers now, so the stock one would
+          // just duplicate the title.
+          headerShown: false,
+          tabBarShowLabel: false,
+          tabBarStyle: styles.bar,
+          tabBarItemStyle: { height: 56 },
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
-            title: "Home",
-            tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name="home-outline" filled="home" label="Home" focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="history"
           options={{
-            title: "History",
-            tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" color={color} size={size} />,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name="receipt-outline" filled="receipt" label="History" focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="add"
           options={{
-            title: "Add",
-            tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" color={color} size={size + 10} />,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name="add-circle-outline" filled="add-circle" label="Add" focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="insights"
           options={{
-            title: "Insights",
-            tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} />,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name="pie-chart-outline" filled="pie-chart" label="Expenses" focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="kapy"
           options={{
-            title: "Kapy",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="chatbubble-ellipses-outline" color={color} size={size} />
+            tabBarIcon: ({ focused }) => (
+              <TabIcon
+                name="chatbubble-ellipses-outline"
+                filled="chatbubble-ellipses"
+                label="Kapy"
+                focused={focused}
+              />
             ),
           }}
         />
       </Tabs>
-    </FinanceProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  bar: {
+    backgroundColor: theme.card,
+    borderTopColor: theme.border,
+    borderTopWidth: 1,
+    height: Platform.OS === "ios" ? 84 : 66,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === "ios" ? 24 : 8,
+  },
+  item: { alignItems: "center", justifyContent: "center", width: 66 },
+  pill: {
+    paddingHorizontal: 16,
+    paddingVertical: 3,
+    borderRadius: 14,
+  },
+  pillActive: { backgroundColor: theme.accentSoft },
+  label: { fontSize: 10, fontWeight: "700", color: theme.muted, marginTop: 3 },
+  labelActive: { color: theme.primaryDark },
+});

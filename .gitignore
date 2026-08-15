@@ -45,3 +45,6 @@ example
 
 # Supabase CLI scratch state
 supabase/.temp/
+
+# Machine-specific Android SDK path
+android/local.properties

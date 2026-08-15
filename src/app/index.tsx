@@ -5,5 +5,7 @@ import { useAuth } from "../lib/auth-context";
 export default function Index() {
   const { user, guest, initializing } = useAuth();
   if (initializing) return null; // root layout already shows the loader
-  return <Redirect href={user || guest ? "/(tabs)" : "/(auth)/login"} />;
+  // Signed-out people start at the welcome screen and pick their own path;
+  // anyone with a session skips it entirely and never sees it.
+  return <Redirect href={user || guest ? "/(tabs)" : "/(auth)/welcome"} />;
 }

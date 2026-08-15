@@ -17,10 +17,18 @@ import {
 type Mood = { emoji: string; title: string; subtitle: string };
 
 type Derived = {
+  /** Real spending this month — excludes money moved into savings. */
   spent: number;
+  /** Money deliberately put into the savings category this month. */
+  saved: number;
+  /** Income transactions logged this month (on top of the profile figure). */
+  earned: number;
+  /** profile.income + earned — everything that came in. */
+  income: number;
+  /** income − spent − saved. What's still loose. */
+  balance: number;
   budget: number;
   remaining: number;
-  income: number;
   savingsGoal: number;
   mood: Mood;
 };
@@ -29,8 +37,11 @@ type FinanceState = {
   transactions: Transaction[];
   profile: UserProfile | null;
   loading: boolean;
+  /** Set when the load failed, so screens can tell "offline" from "empty". */
+  error: string | null;
   derived: Derived;
   refreshProfile: () => Promise<void>;
+  retry: () => void;
 };
 
 const FinanceContext = createContext<FinanceState>({} as FinanceState);
@@ -59,6 +70,10 @@ export function FinanceProvider({ children }: PropsWithChildren) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Bumping this re-runs the effect below, which re-subscribes and refetches.
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => setAttempt((n) => n + 1);
 
   const refreshProfile = async () => {
     if (!uid) return;
@@ -74,29 +89,65 @@ export function FinanceProvider({ children }: PropsWithChildren) {
       setTransactions([]);
       setProfile(null);
       setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
+    setError(null);
     refreshProfile();
-    const unsub = listenTransactions(uid, (txns) => {
-      setTransactions(txns);
-      setLoading(false);
-    });
+    const unsub = listenTransactions(
+      uid,
+      (txns) => {
+        setTransactions(txns);
+        setError(null);
+        setLoading(false);
+      },
+      (message) => {
+        // Don't blank the list on a failed refresh — keep whatever we had and
+        // let the screen say the load failed.
+        setError(message);
+        setLoading(false);
+      }
+    );
     return unsub;
-  }, [uid]);
+  }, [uid, attempt]);
 
   const derived = useMemo<Derived>(() => {
-    const income = profile?.income ?? 0;
+    const baseIncome = profile?.income ?? 0;
     const savingsGoal = profile?.savingsGoal ?? 0;
-    const spent = transactions
-      .filter((t) => t.type === "expense" && isThisMonth(t.date))
+
+    const thisMonth = transactions.filter((t) => isThisMonth(t.date));
+
+    // Income transactions were previously ignored entirely, so logging a
+    // salary changed nothing on screen. They now add to what came in.
+    const earned = thisMonth
+      .filter((t) => t.type === "income")
       .reduce((sum, t) => sum + t.amount, 0);
+
+    // Moving money into savings is stored as an expense in the "savings"
+    // category. It leaves your spendable pool, but it is not *spending* — so
+    // it's tracked separately and no longer counts against the budget or
+    // makes Kapy stressed.
+    const saved = thisMonth
+      .filter((t) => t.type === "expense" && t.category === "savings")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const spent = thisMonth
+      .filter((t) => t.type === "expense" && t.category !== "savings")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const income = baseIncome + earned;
+    const balance = income - spent - saved;
     const budget = Math.max(income - savingsGoal, 0);
+
     return {
       spent,
+      saved,
+      earned,
+      income,
+      balance,
       budget,
       remaining: budget - spent,
-      income,
       savingsGoal,
       mood: computeMood(spent, budget),
     };
@@ -104,7 +155,7 @@ export function FinanceProvider({ children }: PropsWithChildren) {
 
   return (
     <FinanceContext.Provider
-      value={{ transactions, profile, loading, derived, refreshProfile }}
+      value={{ transactions, profile, loading, error, derived, refreshProfile, retry }}
     >
       {children}
     </FinanceContext.Provider>
