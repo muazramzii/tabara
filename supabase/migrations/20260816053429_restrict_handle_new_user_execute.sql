@@ -1,0 +1,12 @@
+-- handle_new_user() only ever runs from the on_auth_user_created trigger, but
+-- living in the public schema meant PostgREST also exposed it at
+-- /rest/v1/rpc/handle_new_user, callable by anon and authenticated alike.
+--
+-- A call from outside a trigger would fail anyway — the function dereferences
+-- NEW, which does not exist there — but a SECURITY DEFINER function reachable
+-- by anonymous callers is not something to leave open on the reasoning that
+-- exploiting it happens to be awkward.
+--
+-- The trigger itself is unaffected: it executes as the table owner, not as the
+-- caller, so revoking these grants does not stop signups creating profiles.
+revoke execute on function public.handle_new_user() from anon, authenticated, public;
