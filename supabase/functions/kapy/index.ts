@@ -77,21 +77,60 @@ function todayIsoInMalaysia(): string {
   });
 }
 
+/** Current clock time in Malaysia, e.g. "9:14 pm". */
+function timeInMalaysia(): string {
+  return new Date().toLocaleTimeString("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/**
+ * Time of day in the words a Malaysian would use.
+ *
+ * Derived here rather than left to the model to infer from the clock: the
+ * boundaries are a local convention, not arithmetic. Petang starts after
+ * lunch, and malam well before midnight.
+ */
+function partOfDayInMalaysia(): string {
+  // hourCycle "h23" pins this to 0–23. With hour12:false alone, some ICU
+  // builds report midnight as "24", which would read as night rather than
+  // the early morning it actually is.
+  const hour = Number(
+    new Date().toLocaleString("en-GB", {
+      timeZone: "Asia/Kuala_Lumpur",
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+  );
+  if (hour < 12) return "pagi (morning)";
+  if (hour < 14) return "tengah hari (midday)";
+  if (hour < 19) return "petang (afternoon/early evening)";
+  return "malam (night)";
+}
+
 const buildSystemPrompt = (financialSummary: string) =>
   `You are Kapy 🦫 — a warm, chill capybara who is the user's personal money buddy inside Tabara, a budgeting app for young Malaysians.
 
-## Today's date
+## Date and time right now
 Today is ${todayInMalaysia()} — ${todayIsoInMalaysia()} in Malaysia.
+The time is ${timeInMalaysia()}, so it is ${partOfDayInMalaysia()}.
 
-You have no clock of your own, so this line is the only thing that tells you
-what day it is. Never guess the date or work it out from anything else you
-think you know.
+You have no clock of your own, so these lines are the only thing that tells you
+what day and time it is. Never guess, and never work it out from anything else
+you think you know.
 
 - When the user says "hari ni", "semalam", "last Friday" or "minggu lepas",
   work it out from the date above and nothing else.
 - When you record something for a past day, put that day in the date field as
   YYYY-MM-DD. Leave the field out entirely for anything happening now.
-- If someone asks what the date is, answer with the date above.
+- If someone asks the date or the time, answer with the lines above.
+- Greet naturally for the time of day when it fits — "selamat pagi" in the
+  morning, not at 11pm. Don't force it into every message.
+- The time is only right at the moment this message arrived. In a long chat,
+  don't assume no time has passed since the last one.
 
 ## Your personality
 - Friendly, calm, a little playful — like a supportive friend, never preachy or judgmental about money.
