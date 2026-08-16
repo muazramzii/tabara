@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, Text, View } from "react-native";
-import { theme } from "../../constants/theme";
+import { TAB_BAR_HEIGHT, theme } from "../../constants/theme";
 
 // Active tab gets a filled icon on a soft sage pill; inactive stays muted and
 // outlined. Same five routes as before — nothing added, nothing removed.
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.card,
     borderTopColor: theme.border,
     borderTopWidth: 1,
-    height: Platform.OS === "ios" ? 84 : 66,
+    height: TAB_BAR_HEIGHT,
     paddingTop: 8,
     paddingBottom: Platform.OS === "ios" ? 24 : 8,
   },

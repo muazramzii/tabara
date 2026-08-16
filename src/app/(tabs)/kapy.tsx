@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProgressBar } from "../../components/ui/cards";
 import { RichText } from "../../components/ui/rich-text";
 import { CATEGORIES } from "../../constants/categories";
-import { theme } from "../../constants/theme";
+import { TAB_BAR_HEIGHT, theme } from "../../constants/theme";
 import { askKapy, scanReceipt, type KapyMessage } from "../../lib/ai";
 import { useFinance } from "../../lib/finance-context";
 import { cat, fmt, isThisMonth } from "../../lib/format";
@@ -268,8 +268,16 @@ export default function Kapy() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      // "padding" on Android too, not just iOS. Android used to handle this
+      // itself via windowSoftInputMode="adjustResize", but under the
+      // edge-to-edge display that Expo now enables by default, Android 15+
+      // ignores adjustResize — the window no longer shrinks, so the composer
+      // stayed put and the keyboard covered it. Leaving behavior undefined
+      // meant this component did nothing at all on Android.
+      behavior="padding"
+      // The composer sits above the tab bar, and the keyboard covers both.
+      // Without this offset it lifts by the wrong amount and leaves a gap.
+      keyboardVerticalOffset={TAB_BAR_HEIGHT}
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + theme.space.sm }]}>

@@ -23,7 +23,7 @@ import { theme } from "../../constants/theme";
 import { scanReceipt } from "../../lib/ai";
 import { useAuth } from "../../lib/auth-context";
 import { addTransaction, type TxnType } from "../../lib/db";
-import { cat } from "../../lib/format";
+import { cat, fmtDate, isThisMonth, monthLabel } from "../../lib/format";
 
 export default function Add() {
   const insets = useSafeAreaInsets();
@@ -69,6 +69,21 @@ export default function Add() {
       });
       setAmount("");
       setNote("");
+
+      // Saving used to navigate away in silence. That is fine when the entry
+      // lands in the current month — you see the balance move. When it does
+      // not, the app looked like it had ignored you, so say where it went.
+      if (!isThisMonth(date)) {
+        Alert.alert(
+          "Saved to " + monthLabel(date),
+          `RM ${amt.toFixed(2)} was recorded on ${fmtDate(date)}. Your ` +
+            `${monthLabel(new Date())} totals are unchanged — open History and ` +
+            `switch month to see it.`,
+          [{ text: "OK", onPress: () => router.navigate("/(tabs)") }]
+        );
+        return;
+      }
+
       router.navigate("/(tabs)");
     } catch (e: any) {
       Alert.alert("Couldn't save", e.message ?? "Try again.");
@@ -116,23 +131,36 @@ export default function Add() {
       // Otherwise today stands, which is what the field already shows.
       if (r.date) setDate(r.date);
 
-      // Say what was and wasn't read, rather than a blanket "Scanned!" — the
-      // user can only check what they know to look at.
-      const notes: string[] = [];
-      if (!r.amount) notes.push("couldn't read the total");
-      if (!r.date) notes.push("couldn't read a date, so it's filed as today");
-      // Below ~0.6 the model is telling us the image was hard to read.
-      const shaky = r.confidence !== null && r.confidence < 0.6;
-
-      if (notes.length > 0 || shaky) {
+      // An old receipt is the case most likely to confuse someone: it saves
+      // correctly, but every total on Home covers the current month only, so
+      // the balance appears not to move at all. Lead with that rather than
+      // leaving it to be noticed in the date field.
+      if (r.date && !isThisMonth(r.date)) {
         Alert.alert(
-          "Scanned — please double-check 🦫",
-          notes.length > 0
-            ? `Kapy ${notes.join(", and ")}. Check everything below before saving.`
-            : "That photo was hard to read. Check the details below before saving."
+          "This receipt isn't from this month",
+          `It's dated ${fmtDate(r.date)}, so saving it now files it under ` +
+            `${monthLabel(r.date)} — your ${monthLabel(new Date())} balance won't change.\n\n` +
+            `If that's wrong, tap the date below and set it yourself before saving.`
         );
       } else {
-        Alert.alert("Scanned! 🦫", "Check the details below, then tap Save.");
+        // Say what was and wasn't read, rather than a blanket "Scanned!" — the
+        // user can only check what they know to look at.
+        const notes: string[] = [];
+        if (!r.amount) notes.push("couldn't read the total");
+        if (!r.date) notes.push("couldn't read a date, so it's filed as today");
+        // Below ~0.6 the model is telling us the image was hard to read.
+        const shaky = r.confidence !== null && r.confidence < 0.6;
+
+        if (notes.length > 0 || shaky) {
+          Alert.alert(
+            "Scanned — please double-check 🦫",
+            notes.length > 0
+              ? `Kapy ${notes.join(", and ")}. Check everything below before saving.`
+              : "That photo was hard to read. Check the details below before saving."
+          );
+        } else {
+          Alert.alert("Scanned! 🦫", "Check the details below, then tap Save.");
+        }
       }
     } catch (e: any) {
       Alert.alert("Scan failed", e.message ?? "Try again.");

@@ -4,6 +4,17 @@
 // that already imports `theme` changes behaviour. The additions below are the
 // design-system layer: spacing, type scale, semantic money colours, and a
 // calmer category palette.
+import { Platform } from "react-native";
+
+/**
+ * Height of the bottom tab bar.
+ *
+ * Shared rather than written in two places: the Kapy composer has to know it
+ * to clear the keyboard, and a tab bar that grew without the composer knowing
+ * would put the text field back under the keyboard.
+ */
+export const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 84 : 66;
+
 export const theme = {
   // surfaces
   bg: "#F4EFE4", // warm cream
