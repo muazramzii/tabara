@@ -52,8 +52,46 @@ type KapyMessage = { role: "user" | "model"; text: string };
 type GeminiPart = Record<string, unknown>;
 type GeminiContent = { role: string; parts: GeminiPart[] };
 
+/**
+ * Today's date, in Malaysia.
+ *
+ * Computed in Asia/Kuala_Lumpur rather than the server's UTC clock: between
+ * midnight and 8am local time, UTC is still on the previous day, so a user
+ * logging a late-night teh tarik would have it dated yesterday.
+ */
+function todayInMalaysia(): string {
+  return new Date().toLocaleDateString("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** The same day as a plain YYYY-MM-DD, for the add_transaction date field. */
+function todayIsoInMalaysia(): string {
+  // en-CA formats as YYYY-MM-DD, which saves parsing a localised string back.
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kuala_Lumpur",
+  });
+}
+
 const buildSystemPrompt = (financialSummary: string) =>
   `You are Kapy 🦫 — a warm, chill capybara who is the user's personal money buddy inside Tabara, a budgeting app for young Malaysians.
+
+## Today's date
+Today is ${todayInMalaysia()} — ${todayIsoInMalaysia()} in Malaysia.
+
+You have no clock of your own, so this line is the only thing that tells you
+what day it is. Never guess the date or work it out from anything else you
+think you know.
+
+- When the user says "hari ni", "semalam", "last Friday" or "minggu lepas",
+  work it out from the date above and nothing else.
+- When you record something for a past day, put that day in the date field as
+  YYYY-MM-DD. Leave the field out entirely for anything happening now.
+- If someone asks what the date is, answer with the date above.
 
 ## Your personality
 - Friendly, calm, a little playful — like a supportive friend, never preachy or judgmental about money.
