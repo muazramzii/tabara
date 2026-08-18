@@ -34,6 +34,7 @@ import {
   disableReminders,
   enableReminders,
   remindersEnabled,
+  sendTestReminder,
 } from "../lib/reminders";
 import { achievements, progression, streak, weekActivity } from "../lib/insights";
 import { AchievementGrid, StreakCard } from "../components/ui/gamification";
@@ -81,6 +82,19 @@ export default function Profile() {
           "Settings › Apps › Tabara › Notifications, then try again."
       );
     }
+  };
+
+  const handleTestReminder = async () => {
+    const sent = await sendTestReminder();
+    if (!sent) {
+      Alert.alert("Notifications are off", "Turn the reminder on first.");
+      return;
+    }
+    Alert.alert(
+      "Test sent",
+      "It arrives in about three seconds. Close the app now if you want to " +
+        "see how it looks on the lock screen."
+    );
   };
 
   // Seed the inputs once the profile arrives.
@@ -338,6 +352,11 @@ export default function Profile() {
               <Text style={styles.accHint}>
                 A nudge at noon so the streak doesn&apos;t slip
               </Text>
+              {remindersOn && (
+                <Pressable onPress={handleTestReminder} hitSlop={8}>
+                  <Text style={styles.testLink}>Send a test notification</Text>
+                </Pressable>
+              )}
             </View>
             <Switch
               value={remindersOn}
@@ -586,6 +605,13 @@ const styles = StyleSheet.create({
 
   // Sits under the row label, so the switch explains itself without needing
   // a separate settings screen.
+  testLink: {
+    fontSize: theme.size.caption,
+    color: theme.accent,
+    fontWeight: "700",
+    marginTop: 6,
+    textDecorationLine: "underline",
+  },
   accHint: {
     fontSize: theme.size.caption,
     color: theme.muted,

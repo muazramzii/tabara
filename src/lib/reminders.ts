@@ -154,3 +154,34 @@ export async function rescheduleReminders(transactions: Transaction[]) {
     });
   }
 }
+
+/**
+ * Fire one notification a few seconds from now, to prove the pipeline works.
+ *
+ * Worth having as a real feature rather than a debug hack: Android silently
+ * drops notifications when the channel is muted, battery optimisation is
+ * aggressive, or Do Not Disturb is on — none of which the app can see. Being
+ * able to check in three seconds beats waiting until noon to find out.
+ *
+ * Deliberately labelled as a test, so nobody mistakes it for a real streak
+ * warning about a streak they have not actually broken.
+ */
+export async function sendTestReminder(): Promise<boolean> {
+  const permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted) return false;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Test reminder 🦫",
+      body: "Notifications are working. The real one arrives at noon.",
+      ...(Platform.OS === "android" ? { channelId: CHANNEL_ID } : {}),
+    },
+    // A few seconds, so there is time to background the app and see it land
+    // on the lock screen the way a real reminder would.
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 3,
+    },
+  });
+  return true;
+}
