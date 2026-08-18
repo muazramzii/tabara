@@ -35,9 +35,14 @@ import {
   enableReminders,
   remindersEnabled,
   sendTestReminder,
+  DEFAULT_HOUR,
+  DEFAULT_MINUTE,
+  getReminderTime,
+  setReminderTime as setReminderTime_,
 } from "../lib/reminders";
 import { achievements, progression, streak, weekActivity } from "../lib/insights";
 import { AchievementGrid, StreakCard } from "../components/ui/gamification";
+import { TimePicker, formatTime } from "../components/ui/time-picker";
 
 const capy = require("../assets/capy-chill.png");
 
@@ -60,6 +65,24 @@ export default function Profile() {
   const [deletingBusy, setDeletingBusy] = useState(false);
 
   const [remindersOn, setRemindersOn] = useState(false);
+
+  const [reminderTime, setReminderTime] = useState({
+    hour: DEFAULT_HOUR,
+    minute: DEFAULT_MINUTE,
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    getReminderTime().then(setReminderTime).catch(() => {});
+  }, []);
+
+  const saveReminderTime = async (hour: number, minute: number) => {
+    setReminderTime({ hour, minute });
+    setPickerOpen(false);
+    // Re-queues the next fortnight at the new time straight away, so the
+    // change is real rather than something that takes effect "next time".
+    await setReminderTime_(hour, minute, transactions);
+  };
 
   // Reflect the real setting on mount. The switch must show what is actually
   // scheduled, not a default that happens to look plausible.
@@ -350,12 +373,18 @@ export default function Profile() {
             <View style={{ flex: 1, paddingRight: theme.space.md }}>
               <Text style={styles.accLabel}>Daily reminder</Text>
               <Text style={styles.accHint}>
-                A nudge at noon so the streak doesn&apos;t slip
+                A nudge at {formatTime(reminderTime.hour, reminderTime.minute)} so
+                the streak doesn&apos;t slip
               </Text>
               {remindersOn && (
-                <Pressable onPress={handleTestReminder} hitSlop={8}>
-                  <Text style={styles.testLink}>Send a test notification</Text>
-                </Pressable>
+                <View style={styles.reminderLinks}>
+                  <Pressable onPress={() => setPickerOpen(true)} hitSlop={8}>
+                    <Text style={styles.testLink}>Change time</Text>
+                  </Pressable>
+                  <Pressable onPress={handleTestReminder} hitSlop={8}>
+                    <Text style={styles.testLink}>Send a test</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
             <Switch
@@ -391,6 +420,13 @@ export default function Profile() {
         )}
       </ScrollView>
 
+      <TimePicker
+        visible={pickerOpen}
+        hour={reminderTime.hour}
+        minute={reminderTime.minute}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={saveReminderTime}
+      />
       <Modal
         visible={deleting}
         transparent
@@ -605,6 +641,7 @@ const styles = StyleSheet.create({
 
   // Sits under the row label, so the switch explains itself without needing
   // a separate settings screen.
+  reminderLinks: { flexDirection: "row", gap: theme.space.base },
   testLink: {
     fontSize: theme.size.caption,
     color: theme.accent,

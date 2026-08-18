@@ -31,9 +31,42 @@ Notifications.setNotificationHandler({
 const ENABLED_KEY = "tabara.reminders.enabled";
 const CHANNEL_ID = "streak-reminders";
 
-/** Hour of day, 24h. Noon: after breakfast and lunch, before the day is lost. */
-export const REMINDER_HOUR = 12;
-export const REMINDER_MINUTE = 0;
+const TIME_KEY = "tabara.reminders.time";
+
+/** Noon: after breakfast and lunch, while the day is still recoverable. */
+export const DEFAULT_HOUR = 12;
+export const DEFAULT_MINUTE = 0;
+
+export type ReminderTime = { hour: number; minute: number };
+
+/** The chosen time, or noon for anyone who has never changed it. */
+export async function getReminderTime(): Promise<ReminderTime> {
+  const raw = await AsyncStorage.getItem(TIME_KEY);
+  if (!raw) return { hour: DEFAULT_HOUR, minute: DEFAULT_MINUTE };
+
+  // Stored as "HH:MM". Anything unparseable falls back rather than throwing —
+  // a corrupt preference should cost the user their custom time, not their
+  // reminders altogether.
+  const match = /^(d{1,2}):(d{1,2})$/.exec(raw);
+  if (!match) return { hour: DEFAULT_HOUR, minute: DEFAULT_MINUTE };
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { hour: DEFAULT_HOUR, minute: DEFAULT_MINUTE };
+  }
+  return { hour, minute };
+}
+
+/** Save the time and re-queue everything so it takes effect immediately. */
+export async function setReminderTime(
+  hour: number,
+  minute: number,
+  transactions: Transaction[]
+) {
+  await AsyncStorage.setItem(TIME_KEY, hour + ":" + minute);
+  await rescheduleReminders(transactions);
+}
 
 /** How many days to queue ahead, for someone who stops opening the app. */
 const DAYS_AHEAD = 14;
@@ -128,12 +161,13 @@ export async function rescheduleReminders(transactions: Transaction[]) {
   await Notifications.cancelAllScheduledNotificationsAsync();
 
   const { current, loggedToday } = streak(transactions);
+  const { hour, minute } = await getReminderTime();
   const now = new Date();
 
   for (let offset = 0; offset < DAYS_AHEAD; offset++) {
     const when = new Date(now);
     when.setDate(now.getDate() + offset);
-    when.setHours(REMINDER_HOUR, REMINDER_MINUTE, 0, 0);
+    when.setHours(hour, minute, 0, 0);
 
     // Today's slot has already gone by, or today is already logged — either
     // way there is nothing useful to say at noon today.
