@@ -19,8 +19,10 @@ export function SocialAuth() {
     setBusy(null);
 
     if (result.ok) {
-      // Onboarding decides for itself whether the profile still needs setting
-      // up, so send everyone there rather than guessing here.
+      // Everyone goes to onboarding; it redirects straight out again for
+      // anyone who already has an income set. This comment used to claim that
+      // was already true when it was not, and returning users were asked to
+      // re-enter their income on every social login as a result.
       router.replace("/onboarding");
       return;
     }

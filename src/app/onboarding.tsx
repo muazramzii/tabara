@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -16,14 +17,40 @@ import {
 import { theme } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { saveUserProfile } from "../lib/db";
+import { useFinance } from "../lib/finance-context";
 
 const capy = require("../assets/capy-party.png");
 
 export default function Onboarding() {
   const { user } = useAuth();
+  const { profile, loading, refreshProfile } = useFinance();
   const [income, setIncome] = useState("");
   const [goal, setGoal] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Anyone who has already set an income has been through this screen before,
+  // so send them straight to the app. Social sign-in routes every login here,
+  // including people who set up months ago, and without this they were asked
+  // to re-enter their income every single time they logged in.
+  //
+  // Waits for loading to finish first. The profile arrives after the session,
+  // so deciding early would bounce an existing user through the form anyway.
+  const alreadySetUp = (profile?.income ?? 0) > 0;
+
+  useEffect(() => {
+    if (loading || saving) return;
+    if (alreadySetUp) router.replace("/(tabs)");
+  }, [loading, saving, alreadySetUp]);
+
+  // Hold the screen blank rather than flashing the form at someone who is
+  // about to be redirected out of it.
+  if (loading || alreadySetUp) {
+    return (
+      <View style={[styles.screen, styles.centred]}>
+        <ActivityIndicator color={theme.primary} size="large" />
+      </View>
+    );
+  }
 
   // ── unchanged: save + validation ─────────────────────────
   const finish = async () => {
@@ -37,6 +64,11 @@ export default function Onboarding() {
       setSaving(true);
       try {
         await saveUserProfile(user.id, { income: incomeNum, savingsGoal: goalNum });
+        // Pull the new figures into the shared provider before leaving.
+        // Without this the context still holds the pre-onboarding profile,
+        // so Home opens showing an income of zero for the person who just
+        // finished typing their income in.
+        await refreshProfile();
       } catch (e: any) {
         Alert.alert("Couldn't save", e.message ?? "Try again.");
         setSaving(false);
@@ -122,6 +154,7 @@ export default function Onboarding() {
 }
 
 const styles = StyleSheet.create({
+  centred: { alignItems: "center", justifyContent: "center" },
   screen: { flex: 1, backgroundColor: theme.bg },
   content: {
     flexGrow: 1,
