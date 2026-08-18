@@ -34,7 +34,6 @@ import {
   disableReminders,
   enableReminders,
   remindersEnabled,
-  sendTestReminder,
   DEFAULT_HOUR,
   DEFAULT_MINUTE,
   getReminderTime,
@@ -107,18 +106,6 @@ export default function Profile() {
     }
   };
 
-  const handleTestReminder = async () => {
-    const sent = await sendTestReminder();
-    if (!sent) {
-      Alert.alert("Notifications are off", "Turn the reminder on first.");
-      return;
-    }
-    Alert.alert(
-      "Test sent",
-      "It arrives in about three seconds. Close the app now if you want to " +
-        "see how it looks on the lock screen."
-    );
-  };
 
   // Seed the inputs once the profile arrives.
   useEffect(() => {
@@ -377,14 +364,9 @@ export default function Profile() {
                 the streak doesn&apos;t slip
               </Text>
               {remindersOn && (
-                <View style={styles.reminderLinks}>
-                  <Pressable onPress={() => setPickerOpen(true)} hitSlop={8}>
-                    <Text style={styles.testLink}>Change time</Text>
-                  </Pressable>
-                  <Pressable onPress={handleTestReminder} hitSlop={8}>
-                    <Text style={styles.testLink}>Send a test</Text>
-                  </Pressable>
-                </View>
+                <Pressable onPress={() => setPickerOpen(true)} hitSlop={8}>
+                  <Text style={styles.testLink}>Change time</Text>
+                </Pressable>
               )}
             </View>
             <Switch
@@ -641,7 +623,6 @@ const styles = StyleSheet.create({
 
   // Sits under the row label, so the switch explains itself without needing
   // a separate settings screen.
-  reminderLinks: { flexDirection: "row", gap: theme.space.base },
   testLink: {
     fontSize: theme.size.caption,
     color: theme.accent,
