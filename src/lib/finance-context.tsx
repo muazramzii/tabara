@@ -40,8 +40,24 @@ export function FinanceProvider({ children }: PropsWithChildren) {
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Loaded-ness is tracked per source, and "loading" means either is not ready.
+  // Previously loading flipped false as soon as the transactions arrived,
+  // while the profile was still in flight. deriveTotals reads
+  // profile?.income ?? 0, so during that window Home rendered a balance of
+  // income-zero minus everything spent — a large negative number, on data
+  // that was perfectly correct. That gap is the bug this replaces.
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [txnsLoaded, setTxnsLoaded] = useState(false);
+  const loading = !(profileLoaded && txnsLoaded);
+
+  // Kept apart so a successful transaction refresh cannot silently clear a
+  // profile failure, which would leave wrong totals on screen with nothing
+  // saying anything had gone wrong.
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [txnError, setTxnError] = useState<string | null>(null);
+  const error = profileError ?? txnError;
+
   // Bumping this re-runs the effect below, which re-subscribes and refetches.
   const [attempt, setAttempt] = useState(0);
   const retry = () => setAttempt((n) => n + 1);
@@ -50,8 +66,16 @@ export function FinanceProvider({ children }: PropsWithChildren) {
     if (!uid) return;
     try {
       setProfile(await getUserProfile(uid));
+      setProfileError(null);
     } catch {
-      setProfile(null); // offline or not set up yet — Home falls back to "set your income"
+      // Deliberately does NOT blank the profile. Nulling it makes income read
+      // as zero, which turns a momentary network failure into a balance of
+      // minus everything you have ever spent. Keep the last known figures and
+      // say the refresh failed — the same choice the transaction listener
+      // below already makes about the list.
+      setProfileError("Couldn't load your budget. Check your connection.");
+    } finally {
+      setProfileLoaded(true);
     }
   };
 
@@ -59,25 +83,30 @@ export function FinanceProvider({ children }: PropsWithChildren) {
     if (!uid) {
       setTransactions([]);
       setProfile(null);
-      setLoading(false);
-      setError(null);
+      setProfileLoaded(true);
+      setTxnsLoaded(true);
+      setProfileError(null);
+      setTxnError(null);
       return;
     }
-    setLoading(true);
-    setError(null);
+    setProfileLoaded(false);
+    setTxnsLoaded(false);
+    setProfileError(null);
+    setTxnError(null);
+
     refreshProfile();
     const unsub = listenTransactions(
       uid,
       (txns) => {
         setTransactions(txns);
-        setError(null);
-        setLoading(false);
+        setTxnError(null);
+        setTxnsLoaded(true);
       },
       (message) => {
-        // Don't blank the list on a failed refresh — keep whatever we had and
-        // let the screen say the load failed.
-        setError(message);
-        setLoading(false);
+        // Do not blank the list on a failed refresh — keep whatever we had
+        // and let the screen say the load failed.
+        setTxnError(message);
+        setTxnsLoaded(true);
       }
     );
     return unsub;

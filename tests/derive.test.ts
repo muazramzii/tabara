@@ -129,3 +129,32 @@ test("decimal amounts stay accurate to the sen", () => {
   );
   assert.ok(Math.abs(d.spent - 30.3) < 0.000001, `got ${d.spent}`);
 });
+
+test("a missing profile yields a negative balance — callers must not render it early", () => {
+  // This is the shape of a real bug. deriveTotals is right to treat a missing
+  // profile as income zero: a brand new account genuinely has none. But a
+  // screen that renders this while the profile is still loading shows minus
+  // everything the user has ever spent, on data that is perfectly correct.
+  //
+  // FinanceProvider therefore reports loading until BOTH the profile and the
+  // transactions have resolved, and keeps the last known profile when a
+  // refresh fails rather than blanking it. If either guarantee is removed,
+  // Home starts showing numbers like the one asserted below.
+  const spend: Transaction[] = [
+    txn(645.1, "expense", "food"),
+    txn(400, "expense", "savings"),
+  ];
+
+  const withProfile = deriveTotals(spend, profile(1800, 400));
+  // Compared to the sen: 1800 - 645.10 - 400 lands on 754.9000000000001 in
+  // binary floating point. The UI formats to two decimals so nobody sees
+  // that, but an exact-equality assertion would fail on it.
+  assert.ok(Math.abs(withProfile.balance - 754.9) < 0.005, "what the user should see");
+
+  const withoutProfile = deriveTotals(spend, null);
+  assert.equal(withoutProfile.income, 0);
+  assert.ok(
+    Math.abs(withoutProfile.balance - -1045.1) < 0.005,
+    "and what they saw instead while the profile was in flight"
+  );
+});
