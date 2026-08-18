@@ -18,7 +18,8 @@ import { ActivityIndicator, View } from "react-native";
 import { theme } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { StreakCelebration } from "../components/ui/streak-celebration";
-import { FinanceProvider } from "../lib/finance-context";
+import { FinanceProvider, useFinance } from "../lib/finance-context";
+import { useReminders } from "../lib/use-reminders";
 import { setupFonts } from "../lib/setup-fonts";
 
 setupFonts();
@@ -49,6 +50,18 @@ function RootNavigator() {
     );
   }
   return <Stack screenOptions={{ headerShown: false }} />;
+}
+
+
+/**
+ * Sits inside FinanceProvider purely so it can read the transaction list.
+ * Renders nothing — it exists to keep the queued reminders in step with
+ * what has actually been logged.
+ */
+function ReminderScheduler() {
+  const { transactions } = useFinance();
+  useReminders(transactions);
+  return null;
 }
 
 export default function RootLayout() {
@@ -82,6 +95,7 @@ export default function RootLayout() {
       <FinanceProvider>
         <StatusBar style="dark" />
         <RootNavigator />
+        <ReminderScheduler />
         {/* Renders above every route, so the burst lands whether the streak
             ticked up from the Add screen or from Kapy recording something. */}
         <StreakCelebration />

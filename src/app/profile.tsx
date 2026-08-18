@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -29,6 +30,11 @@ import { useFinance } from "../lib/finance-context";
 import { fmt, isThisMonth } from "../lib/format";
 import { USERNAME_MAX, validateUsername } from "../lib/password";
 import { supabase } from "../lib/supabase";
+import {
+  disableReminders,
+  enableReminders,
+  remindersEnabled,
+} from "../lib/reminders";
 import { achievements, progression, streak, weekActivity } from "../lib/insights";
 import { AchievementGrid, StreakCard } from "../components/ui/gamification";
 
@@ -51,6 +57,31 @@ export default function Profile() {
   const [deleting, setDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deletingBusy, setDeletingBusy] = useState(false);
+
+  const [remindersOn, setRemindersOn] = useState(false);
+
+  // Reflect the real setting on mount. The switch must show what is actually
+  // scheduled, not a default that happens to look plausible.
+  useEffect(() => {
+    remindersEnabled().then(setRemindersOn).catch(() => setRemindersOn(false));
+  }, []);
+
+  const toggleReminders = async (next: boolean) => {
+    if (!next) {
+      setRemindersOn(false);
+      await disableReminders();
+      return;
+    }
+    const granted = await enableReminders(transactions);
+    setRemindersOn(granted);
+    if (!granted) {
+      Alert.alert(
+        "Notifications are off",
+        "Android is blocking notifications for Tabara. Turn them on in " +
+          "Settings › Apps › Tabara › Notifications, then try again."
+      );
+    }
+  };
 
   // Seed the inputs once the profile arrives.
   useEffect(() => {
@@ -302,6 +333,21 @@ export default function Profile() {
           </View>
           <View style={styles.divider} />
           <View style={styles.accRow}>
+            <View style={{ flex: 1, paddingRight: theme.space.md }}>
+              <Text style={styles.accLabel}>Daily reminder</Text>
+              <Text style={styles.accHint}>
+                A nudge at noon so the streak doesn&apos;t slip
+              </Text>
+            </View>
+            <Switch
+              value={remindersOn}
+              onValueChange={toggleReminders}
+              trackColor={{ false: theme.border, true: theme.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.accRow}>
             <Text style={styles.accLabel}>Spent this month</Text>
             <Text style={styles.accValue}>{fmt(spent)}</Text>
           </View>
@@ -538,6 +584,14 @@ const styles = StyleSheet.create({
   modalSave: { backgroundColor: theme.primaryDark },
   modalSaveText: { color: "#fff", fontWeight: "800", fontSize: theme.size.body },
 
+  // Sits under the row label, so the switch explains itself without needing
+  // a separate settings screen.
+  accHint: {
+    fontSize: theme.size.caption,
+    color: theme.muted,
+    marginTop: 2,
+    lineHeight: 16,
+  },
   deleteLink: { alignItems: "center", marginTop: theme.space.base },
   // Understated on purpose. It must be findable — Play Store requires it — but
   // it shouldn't compete with the actions people actually came here for.
