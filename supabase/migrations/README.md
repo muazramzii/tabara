@@ -26,6 +26,24 @@ npx supabase migration list --linked
 | `..._add_username_and_profile_trigger` | Display name, and the trigger that creates a profile at signup |
 | `..._handle_new_user_oauth_names` | Falls back to `full_name` / `name` for Google and Facebook |
 | `..._restrict_handle_new_user_execute` | Revokes the RPC grant PostgREST had exposed |
+| `20261122100000_add_data_integrity_constraints` | CHECK constraints on amounts, categories, notes, dates, income, goals, username and budgets — added `NOT VALID`, then validated where existing data allows; makes `handle_new_user` truncate long provider names |
+| `20261122120000_kapy_idempotency_and_quota` | `transactions.client_request_id` with a per-user unique index (a confirmed transaction can only be saved once), the `ai_usage` counters and the `ai_consume` function that enforces per-user request quotas |
+
+## Applying the last two
+
+Both are additive and safe on a live database; neither rewrites a row or breaks
+an older app build. Apply them **before** deploying the Kapy function:
+
+```bash
+npx supabase db push
+```
+
+Then confirm the constraints validated (any left `NOT VALID` have older rows that
+break a rule, and the migration printed a warning naming each):
+
+```sql
+select conname, convalidated from pg_constraint where conname like '%\_chk' escape '\';
+```
 
 ## The probe migration
 
