@@ -48,7 +48,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --experimental-strip-types --import ./tests/register.mjs --test tests/*.test.ts"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --import ./tests/register.mjs --test tests/*.test.ts",
+    "eval:kapy": "node --experimental-strip-types --import ./tests/register.mjs scripts/eval-kapy.ts",
+    "eval:kapy:live": "node --experimental-strip-types --import ./tests/register.mjs scripts/eval-kapy-live.ts"
   },
   "private": true
 }
