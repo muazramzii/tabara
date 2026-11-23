@@ -30,9 +30,16 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files — these hold secrets. Only the placeholder template
+# (.env.example) is tracked; tests/repo-hygiene.test.ts enforces that.
 .env
-.env*.local
+.env.*
+!.env.example
+
+# service credentials and signing material
+*.keystore
+service-account*.json
+*-service-account*.json
 
 # typescript
 *.tsbuildinfo
@@ -43,8 +50,15 @@ example
 /ios
 /android
 
-# Supabase CLI scratch state
+# Supabase CLI local state. `supabase link` writes the hosted project's
+# reference and name here; it is per-developer and must never be committed.
 supabase/.temp/
+supabase/.branches/
+# Secrets for local Edge Function runs (`supabase functions serve --env-file`)
+supabase/.env
+supabase/.env.*
+supabase/functions/.env
+supabase/functions/.env.*
 
 # Machine-specific Android SDK path
 android/local.properties

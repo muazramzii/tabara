@@ -1,3 +1,4 @@
+import { toSafeError, toSafeFunctionError, safeServerMessage, AppError } from "./errors";
 import { supabase } from "./supabase";
 
 export type TxnType = "expense" | "income";
@@ -60,7 +61,7 @@ export async function saveUserProfile(uid: string, p: UserProfile) {
   const { error } = await supabase
     .from("profiles")
     .upsert(payload, { onConflict: "id" });
-  if (error) throw error;
+  if (error) throw toSafeError(error);
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -70,7 +71,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     .eq("id", uid)
     .maybeSingle(); // no row yet is a normal state, not an error
 
-  if (error) throw error;
+  if (error) throw toSafeError(error);
   if (!data) return null;
 
   return {
@@ -93,8 +94,15 @@ export async function deleteAccount(): Promise<void> {
   const { data, error } = await supabase.functions.invoke("delete-account", {
     body: {},
   });
-  if (error) throw new Error(error.message ?? "Couldn't delete the account.");
-  if (data?.error) throw new Error(data.error);
+  if (error) {
+    throw await toSafeFunctionError(error, "Couldn't delete the account. Try again.");
+  }
+  if (data?.error) {
+    throw new AppError(
+      safeServerMessage(data.error) ?? "Couldn't delete the account. Try again.",
+      "function_error"
+    );
+  }
 }
 
 /**
@@ -113,7 +121,7 @@ export async function saveUsername(uid: string, username: string) {
       { id: uid, username, updated_at: new Date().toISOString() },
       { onConflict: "id" }
     );
-  if (error) throw error;
+  if (error) throw toSafeError(error);
 }
 
 export async function saveBudgets(uid: string, budgets: Record<string, number>) {
@@ -123,7 +131,7 @@ export async function saveBudgets(uid: string, budgets: Record<string, number>) 
     { id: uid, budgets, updated_at: new Date().toISOString() },
     { onConflict: "id" }
   );
-  if (error) throw error;
+  if (error) throw toSafeError(error);
 }
 
 // ── Transactions ─────────────────────────────────────────
@@ -146,7 +154,7 @@ export async function addTransaction(
     note: txn.note ? txn.note : null, // empty note stays null, not ""
     date: (txn.date ?? new Date()).toISOString(),
   });
-  if (error) throw error;
+  if (error) throw toSafeError(error);
 }
 
 export async function deleteTransaction(uid: string, id: string) {
@@ -157,7 +165,7 @@ export async function deleteTransaction(uid: string, id: string) {
     .delete()
     .eq("id", id)
     .eq("user_id", uid);
-  if (error) throw error;
+  if (error) throw toSafeError(error);
 }
 
 export async function fetchTransactions(uid: string): Promise<Transaction[]> {
@@ -167,7 +175,7 @@ export async function fetchTransactions(uid: string): Promise<Transaction[]> {
     .eq("user_id", uid)
     .order("date", { ascending: false });
 
-  if (error) throw error;
+  if (error) throw toSafeError(error);
   return (data ?? []).map((row) => toTransaction(row as TransactionRow));
 }
 
@@ -201,7 +209,7 @@ export function listenTransactions(
       if (!cancelled) cb(txns);
     } catch (e: any) {
       if (!cancelled) {
-        if (onError) onError(e?.message ?? "Couldn't load your transactions.");
+        if (onError) onError(toSafeError(e, "Couldn't load your transactions.").message);
         else cb([]); // no handler passed — keep the old behaviour
       }
     }

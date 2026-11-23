@@ -24,6 +24,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     // On web the session can come back via a URL fragment; on native it can't.
     detectSessionInUrl: Platform.OS === "web",
+    // Authorisation-code flow with PKCE. With the default ("implicit") flow the
+    // browser is redirected to tabara://auth-callback#access_token=…, handing
+    // live session tokens to whatever app receives that custom-scheme URL. With
+    // PKCE it carries only a one-time code that cannot be exchanged without the
+    // secret verifier this app saved (in AsyncStorage) before the browser opened.
+    //
+    // Caveat: PKCE ideally hashes the verifier (S256). React Native has no
+    // WebCrypto `crypto.subtle`, so supabase-js falls back to the "plain"
+    // method and logs a warning. That is still strictly stronger than implicit —
+    // the code is useless without the verifier — but S256 needs a WebCrypto
+    // polyfill (a new dependency), which is deliberately left for a reviewed
+    // follow-up. Existing stored sessions are unaffected by this setting.
+    flowType: "pkce",
   },
 });
 

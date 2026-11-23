@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { isUserCancellation, matchesRedirect, parseAuthCallback } from "./oauth-url";
 import { supabase } from "./supabase";
 
 // Social sign-in via the system browser.
@@ -10,7 +11,13 @@ import { supabase } from "./supabase";
 // browser tab appearing briefly.
 //
 // No client secret lives in the app. The app only opens a Supabase-generated
-// URL; Supabase holds the provider credentials and does the token exchange.
+// URL; Supabase holds the provider credentials and does the code exchange.
+//
+// PKCE (see supabase.ts): the browser is sent back with a one-time `code`, not
+// with session tokens. The code is useless without the verifier that this app
+// stored before the browser opened, so another app that manages to receive the
+// redirect cannot turn it into a session. Consequently this file never accepts
+// tokens from a URL: a redirect that carries them is not one we asked for.
 
 export type OAuthProvider = "google" | "facebook";
 
@@ -36,22 +43,7 @@ export function redirectUrl() {
   return Linking.createURL("auth-callback");
 }
 
-/** Pull the session tokens out of whatever the provider redirected us back with. */
-function parseAuthParams(url: string) {
-  // Tokens arrive in the fragment (#access_token=…) on the implicit flow and
-  // as ?code=… on PKCE. Handle both so this keeps working if the client's
-  // flowType is ever changed.
-  const [, fragment] = url.split("#");
-  const query = url.split("?")[1]?.split("#")[0];
-
-  const params = new URLSearchParams(fragment ?? query ?? "");
-  return {
-    accessToken: params.get("access_token"),
-    refreshToken: params.get("refresh_token"),
-    code: params.get("code"),
-    error: params.get("error_description") ?? params.get("error"),
-  };
-}
+const DIDNT_COMPLETE = "Sign-in didn't complete. Try again.";
 
 export type OAuthResult =
   | { ok: true }
@@ -88,10 +80,13 @@ export async function signInWithProvider(
 
     if (error) {
       // The commonest cause by far is the provider not being switched on in
-      // the Supabase dashboard, so say that rather than echoing a raw error.
+      // the Supabase dashboard. That is a hint for whoever is setting the app
+      // up, not something to show the public, so it only appears in development.
       return {
         ok: false,
-        message: `${PROVIDER_LABEL[provider]} sign-in isn't set up yet. Enable it in Supabase → Authentication → Providers.`,
+        message: __DEV__
+          ? `${PROVIDER_LABEL[provider]} sign-in isn't set up yet. Enable it in Supabase → Authentication → Providers.`
+          : `${PROVIDER_LABEL[provider]} sign-in isn't available right now. Try again later.`,
       };
     }
     if (!data?.url) {
@@ -105,29 +100,42 @@ export async function signInWithProvider(
       return { ok: false, cancelled: true };
     }
 
-    const { accessToken, refreshToken, code, error: authError } =
-      parseAuthParams(result.url);
-
-    if (authError) return { ok: false, message: authError };
-
-    if (accessToken && refreshToken) {
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (sessionError) return { ok: false, message: sessionError.message };
-      return { ok: true };
+    // On Android the browser module treats any URL that *begins with* the
+    // redirect URL as ours. Require an exact match before reading anything out
+    // of it.
+    if (!matchesRedirect(result.url, redirectTo)) {
+      if (__DEV__) console.warn("[oauth] ignoring a callback to an unexpected URL");
+      return { ok: false, message: DIDNT_COMPLETE };
     }
 
-    if (code) {
-      const { error: exchangeError } =
-        await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) return { ok: false, message: exchangeError.message };
-      return { ok: true };
+    const callback = parseAuthCallback(result.url);
+
+    if (callback.error) {
+      // Saying no on the provider's page is a choice, not a failure. Anything
+      // else is reported generically: the provider's own wording can carry
+      // internal detail, and anyone able to open our URL scheme could put text
+      // of their choosing in it.
+      if (isUserCancellation(callback.error)) return { ok: false, cancelled: true };
+      if (__DEV__) console.warn("[oauth] provider returned error:", callback.error);
+      return { ok: false, message: DIDNT_COMPLETE };
     }
 
-    return { ok: false, message: "Sign-in didn't complete. Try again." };
+    // Session tokens in a URL are never accepted. We asked for a code; tokens
+    // arriving instead means the URL was not produced by our own request.
+    if (callback.hasTokens || !callback.code) {
+      if (__DEV__) console.warn("[oauth] callback had no usable authorisation code");
+      return { ok: false, message: DIDNT_COMPLETE };
+    }
+
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(callback.code);
+    if (exchangeError) {
+      if (__DEV__) console.warn("[oauth] code exchange failed:", exchangeError.name);
+      return { ok: false, message: DIDNT_COMPLETE };
+    }
+    return { ok: true };
   } catch (e: any) {
-    return { ok: false, message: e?.message ?? "Something went wrong." };
+    // The message of an unexpected exception is for the log, not for the screen.
+    if (__DEV__) console.warn("[oauth] unexpected error:", e?.message);
+    return { ok: false, message: "Something went wrong. Try again." };
   }
 }

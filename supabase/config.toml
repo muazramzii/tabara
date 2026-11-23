@@ -1,0 +1,34 @@
+# Supabase CLI configuration for Tabara.
+#
+# Deliberately minimal. It records only what the repository can state with
+# certainty: the Edge Function settings. Nothing here identifies, or can reach,
+# the hosted project — that link is made per machine with `supabase link`, which
+# writes supabase/.temp/ (ignored, never committed).
+#
+# Auth providers, redirect URLs, email/SMTP settings, API limits and secrets are
+# NOT described here on purpose. They live in the Supabase dashboard, and a
+# `[auth]` or `[api]` block in this file would let `supabase config push`
+# overwrite the dashboard's live values with whatever the file says. Do not run
+# `supabase config push` for this project unless every section has been
+# reviewed first. The settings that must be made by hand are listed in
+# docs/TABARA_2.0_PHASE1_SECURITY_REPORT.md.
+
+# Local-development identifier only (names the local Docker containers).
+# This is not the hosted project's reference.
+project_id = "tabara"
+
+# `verify_jwt = true` makes the platform reject requests that carry no validly
+# signed JWT. It is a first layer only: the project's anon key is itself a valid
+# JWT, so every function that matters also authenticates the caller in code
+# (supabase/functions/_shared/auth.ts for scan-receipt; auth.getUser() in kapy
+# and delete-account). Stated explicitly so the deployed behaviour no longer
+# depends on a dashboard toggle or a CLI default.
+
+[functions.kapy]
+verify_jwt = true
+
+[functions.scan-receipt]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
