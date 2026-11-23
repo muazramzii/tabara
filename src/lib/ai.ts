@@ -1,4 +1,12 @@
-import { ALL_CATEGORIES, CATEGORIES } from "../constants/categories";
+import { CATEGORIES } from "../constants/categories";
+import { AppError, GENERIC_ERROR, safeServerMessage, toSafeFunctionError } from "./errors";
+import {
+  parseConfirmation,
+  parseReply,
+  type Confirmation,
+  type KapyMessage,
+  type Proposal,
+} from "./kapy-chat";
 import { supabase } from "./supabase";
 
 // The Gemini API key used to live in .env with an EXPO_PUBLIC_ prefix, which
@@ -8,20 +16,30 @@ import { supabase } from "./supabase";
 // the screens calling them didn't have to change.
 //
 // supabase.functions.invoke attaches the logged-in user's token automatically,
-// and the functions reject unauthenticated callers.
+// and the functions authenticate it themselves (supabase/functions/_shared/auth.ts).
 
-/** Unwraps an Edge Function response, turning either failure mode into a throw. */
+/**
+ * Unwraps an Edge Function response, turning every failure into a thrown
+ * `AppError` whose message is safe to show.
+ *
+ * Our functions answer failures with a non-2xx status and `{ error, code }`.
+ * supabase-js reports every non-2xx as a generic "non-2xx status code" error
+ * and leaves the real response in `error.context`, so the message has to be
+ * read from there (see errors.ts) — otherwise "Your session expired" or "That
+ * image is too large" would never reach the person.
+ */
 async function callFunction<T>(
   name: string,
   body: Record<string, unknown>
 ): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
 
-  // A non-2xx status arrives as `error`; a handled failure arrives as
-  // `data.error` with a message worth showing the user.
-  if (error) throw new Error(error.message ?? `${name} failed.`);
-  if (data?.error) throw new Error(data.error);
-  if (!data) throw new Error(`${name} returned nothing.`);
+  if (error) throw await toSafeFunctionError(error);
+  // A 2xx that still carries an error message: keep it only if it is fit to show.
+  if (data?.error) {
+    throw new AppError(safeServerMessage(data.error) ?? GENERIC_ERROR, "function_error");
+  }
+  if (!data) throw new AppError(GENERIC_ERROR, "empty_response");
 
   return data as T;
 }
@@ -97,23 +115,36 @@ export async function scanReceipt(
   };
 }
 
-export interface KapyMessage {
-  role: "user" | "model";
-  text: string;
+export type { KapyMessage } from "./kapy-chat";
+
+export interface KapyReply {
+  reply: string;
+  /** Opaque: what the server wants remembered about the conversation. Send it back as it is. */
+  context: Record<string, unknown> | null;
+  /** A transaction for the person to confirm. Nothing is saved until they do. */
+  proposal: Proposal | null;
 }
 
-export async function askKapy(
-  history: KapyMessage[],
-  financialSummary: string
-): Promise<string> {
-  const { reply } = await callFunction<{ reply: string }>("kapy", {
-    history,
-    financialSummary,
-    // Kapy records income as well as expenses ("dapat gaji 2000"), so it needs
-    // both lists — otherwise a salary would have to be filed under a spending
-    // category. Sent from here so constants/categories.ts stays the single
-    // source of truth.
-    categories: ALL_CATEGORIES.map((c) => c.id),
-  });
-  return reply?.trim() || "Hmm, I blanked out 🦫 try again?";
+/**
+ * One chat turn. The server reads the user's real figures itself, from the
+ * database, for every question: this sends no financial summary and no category
+ * list, so there is nothing stale to trust and nothing to tamper with.
+ */
+export async function askKapy(history: KapyMessage[], context: Record<string, unknown> | null): Promise<KapyReply> {
+  const raw = await callFunction<unknown>("kapy", { protocol: 2, history, context });
+  const parsed = parseReply(raw);
+  if (!parsed) throw new AppError("Kapy didn't send a usable answer. Please try again.", "bad_reply");
+  return parsed;
+}
+
+/**
+ * Saves a transaction the person confirmed. Safe to call again with the same
+ * proposal (a double tap, a retry after a lost response): the server answers
+ * "already_recorded" instead of saving twice.
+ */
+export async function confirmKapyTransaction(proposal: Proposal): Promise<NonNullable<Confirmation>> {
+  const raw = await callFunction<unknown>("kapy", { action: "confirm_transaction", proposal });
+  const parsed = parseConfirmation(raw);
+  if (!parsed) throw new AppError("Couldn't confirm that it was saved. Check History before trying again.", "bad_confirmation");
+  return parsed;
 }

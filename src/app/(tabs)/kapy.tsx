@@ -16,11 +16,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProgressBar } from "../../components/ui/cards";
+import { ProposalCardView } from "../../components/ui/proposal-card";
 import { RichText } from "../../components/ui/rich-text";
-import { CATEGORIES } from "../../constants/categories";
 import { TAB_BAR_HEIGHT, theme } from "../../constants/theme";
-import { askKapy, scanReceipt, type KapyMessage } from "../../lib/ai";
+import { askKapy, confirmKapyTransaction, scanReceipt } from "../../lib/ai";
 import { useFinance } from "../../lib/finance-context";
+import {
+  addReply,
+  canCancel,
+  historyForServer,
+  updateCard,
+  type ChatMessage,
+  type ProposalCard,
+} from "../../lib/kapy-chat";
 import { cat, fmt, isThisMonth } from "../../lib/format";
 
 const capyAvatar = require("../../assets/capy-chill.png");
@@ -94,13 +102,8 @@ function SpendingReview() {
   );
 }
 
-// A chat message may carry a photo the user attached. The extra field is
-// local to this screen — the Edge Function only ever reads role and text.
-type ChatMessage = KapyMessage & { image?: string };
-
 export default function Kapy() {
   const insets = useSafeAreaInsets();
-  const { derived, transactions } = useFinance();
   const [scanning, setScanning] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -112,38 +115,30 @@ export default function Kapy() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // ── unchanged: summary sent to the Edge Function ─────────
-  const buildSummary = () => {
-    const now = new Date();
-    const map = new Map<string, number>();
-    transactions.forEach((t) => {
-      if (
-        t.type === "expense" &&
-        t.date.getMonth() === now.getMonth() &&
-        t.date.getFullYear() === now.getFullYear()
-      ) {
-        map.set(t.category, (map.get(t.category) ?? 0) + t.amount);
-      }
-    });
-    const top = [...map.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(
-        ([id, amt]) =>
-          `${CATEGORIES.find((c) => c.id === id)?.label ?? id}: RM ${amt.toFixed(2)}`
-      )
-      .join(", ");
-    return [
-      `Monthly income: RM ${derived.income}`,
-      `Savings goal: RM ${derived.savingsGoal}`,
-      `Spendable budget this month: RM ${derived.budget}`,
-      `Spent so far: RM ${derived.spent.toFixed(2)}`,
-      `Remaining: RM ${derived.remaining.toFixed(2)}`,
-      top ? `Top spending: ${top}` : "No spending logged yet this month.",
-    ].join("\n");
+  // What the server asked us to remember about the conversation (which period
+  // and category it was about). Opaque to this screen: it is handed back as it
+  // arrived, and holds no amounts or text. A ref, so a reply that lands between
+  // two renders is never lost.
+  const contextRef = useRef<Record<string, unknown> | null>(null);
+
+  // Card ids with a confirmation in flight, so a double tap cannot send two.
+  const confirming = useRef(new Set<string>());
+
+  /** Sends the conversation and shows Kapy's answer, or a safe error. */
+  const ask = async (conversation: ChatMessage[]) => {
+    try {
+      const out = await askKapy(historyForServer(conversation), contextRef.current);
+      contextRef.current = out.context;
+      setMessages((m) => addReply(m, out));
+    } catch (e: any) {
+      // Messages from the data layer are already safe to show (see lib/errors.ts).
+      setMessages((m) => [
+        ...m,
+        { role: "model", text: "⚠️ " + (e?.message ?? "Something went wrong. Please try again.") },
+      ]);
+    }
   };
 
-  // ── unchanged: send logic ────────────────────────────────
   const sendMessage = async (text: string) => {
     const t = text.trim();
     if (!t || loading) return;
@@ -152,17 +147,42 @@ export default function Kapy() {
     setInput("");
     setLoading(true);
     try {
-      const reply = await askKapy(next, buildSummary());
-      setMessages((m) => [...m, { role: "model", text: reply }]);
-    } catch (e: any) {
-      setMessages((m) => [
-        ...m,
-        { role: "model", text: "⚠️ " + (e?.message ?? String(e)) },
-      ]);
+      await ask(next);
     } finally {
       setLoading(false);
     }
   };
+
+  /** The person tapped Confirm. Saves through the server, then shows what the database stored. */
+  const confirmCard = async (card: ProposalCard) => {
+    const id = card.data.requestId;
+    if (confirming.current.has(id)) return;
+    confirming.current.add(id);
+    setMessages((m) => updateCard(m, id, (c) => ({ ...c, state: "saving", error: undefined })));
+    try {
+      const r = await confirmKapyTransaction(card.data);
+      setMessages((m) =>
+        updateCard(m, id, (c) => ({
+          ...c,
+          state: r.status === "recorded" ? "saved" : "already_saved",
+          saved: r.transaction ?? undefined,
+        }))
+      );
+    } catch (e: any) {
+      setMessages((m) =>
+        updateCard(m, id, (c) => ({
+          ...c,
+          state: "failed",
+          error: (e?.message ?? "Couldn't save that.") + " Nothing was saved.",
+        }))
+      );
+    } finally {
+      confirming.current.delete(id);
+    }
+  };
+
+  const cancelCard = (id: string) =>
+    setMessages((m) => (canCancel(m, id) ? updateCard(m, id, (c) => ({ ...c, state: "cancelled" })) : m));
 
   /**
    * Attach a receipt photo. Runs it through the same scan-receipt Edge
@@ -238,16 +258,12 @@ export default function Kapy() {
       setScanning(false);
       setLoading(true);
 
-      // Photo-only bubbles carry no text, so drop them before sending.
-      const reply = await askKapy(
-        next.filter((m) => m.text.trim().length > 0),
-        buildSummary()
-      );
-      setMessages((m) => [...m, { role: "model", text: reply }]);
+      // Photo-only bubbles carry no text; historyForServer drops them.
+      await ask(next);
     } catch (e: any) {
       setMessages((m) => [
         ...m,
-        { role: "model", text: "⚠️ " + (e?.message ?? String(e)) },
+        { role: "model", text: "⚠️ " + (e?.message ?? "Something went wrong. Please try again.") },
       ]);
     } finally {
       setScanning(false);
@@ -301,8 +317,8 @@ export default function Kapy() {
         <SpendingReview />
 
         {messages.map((m, i) => (
+          <View key={i} style={styles.block}>
           <View
-            key={i}
             style={[styles.row, m.role === "user" ? styles.rowRight : styles.rowLeft]}
           >
             {m.role === "model" && <Image source={capyAvatar} style={styles.avatar} />}
@@ -334,6 +350,14 @@ export default function Kapy() {
               )}
             </View>
           </View>
+          {!!m.card && (
+            <ProposalCardView
+              card={m.card}
+              onConfirm={() => confirmCard(m.card!)}
+              onCancel={() => cancelCard(m.card!.data.requestId)}
+            />
+          )}
+          </View>
         ))}
 
         {loading && (
@@ -341,7 +365,7 @@ export default function Kapy() {
             <Image source={capyAvatar} style={styles.avatar} />
             <View style={[styles.bubble, styles.kapyBubble, styles.typing]}>
               <ActivityIndicator size="small" color={theme.accent} />
-              <Text style={styles.typingText}>Kapy is thinking…</Text>
+              <Text style={styles.typingText}>Kapy is checking your numbers…</Text>
             </View>
           </View>
         )}
@@ -468,6 +492,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space.md,
   },
 
+  block: { gap: theme.space.sm },
   row: { flexDirection: "row", alignItems: "flex-end", gap: theme.space.sm },
   rowLeft: { justifyContent: "flex-start" },
   rowRight: { justifyContent: "flex-end" },
