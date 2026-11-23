@@ -198,8 +198,16 @@ Record the date, model and numbers in `evals/kapy/README.md`.
 
 ## 16. Git commits created
 
-**None.** All Phase 1 and Phase 2 work is uncommitted in the local `develop` working tree (HEAD is still `dab0f83`). The repository's configured Git identity resolves to an AI-assistant identity, and the stated policy is that commits must use the repository owner's identity and carry no AI attribution. Committing as configured would breach that, so no commit was made, nothing was pushed, and `main` and the tag `v1.0.0-baseline` are untouched.
+Five commits on `develop` (authored by the repository owner, no trailers), pushed as a fast-forward from `dab0f83`:
 
-Until it is committed the work exists only in this container. To proceed, the owner can set their own identity (`git config user.name` / `user.email`) and ask for the work to be committed in reviewable chunks (suggested split: Phase 1 hardening; Phase 2 server engine + migration; Phase 2 client; tests and evals; docs), or commit it themselves.
+| Commit | Content |
+|---|---|
+| `ac94938` | Phase 1: security hardening |
+| `d75c654` | Phase 2: Kapy engine with server-side data, tools and confirmed writes (incl. migration and server tests) |
+| `8c05be4` | Phase 2: Kapy chat client with transaction confirmation card |
+| `a3bb04a` | Phase 2: Kapy evaluation datasets and scripts |
+| `694baff` | Phase 2: documentation and report |
+
+`main` and the tag `v1.0.0-baseline` were not touched. A documentation-only commit follows this report update.
 
 Phase 3 has not been started.
